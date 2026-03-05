@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <!-- Build -->
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>latestmajor</LangVersion>
+
+        <!-- Versioning -->
+        <ReleaseVersion>1.0.0</ReleaseVersion>
+        <Version>$(ReleaseVersion)</Version>
+        <FileVersion>$(ReleaseVersion)</FileVersion>
+        <AssemblyVersion>$(ReleaseVersion)</AssemblyVersion>
+        <PackageVersion>$(ReleaseVersion)</PackageVersion>
+
+        <!-- NuGet identity -->
+        <PackageId>OtterApi</PackageId>
+        <Title>OtterApi</Title>
+        <Authors>Oliver</Authors>
+        <Copyright>Copyright © 2024-2026 Oliver</Copyright>
+        <Description>ASP.NET Core library that automatically generates a full REST API on top of your EF Core models. Register your entities once — GET / POST / PUT / DELETE routes, filtering, sorting, pagination, authorization, and Swagger docs are all available without writing a single controller or repository.</Description>
+        <PackageTags>aspnetcore;efcore;rest;api;crud;code-generation;swagger;openapi</PackageTags>
+
+        <!-- Links -->
+        <PackageProjectUrl>https://github.com/dmitry-up/OtterApi</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/dmitry-up/OtterApi</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <!-- License -->
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+
+        <!-- Readme shown on nuget.org package page -->
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <!-- Icon (128×128 px PNG placed next to the .csproj) -->
+        <!-- <PackageIcon>icon.png</PackageIcon> -->
+
+        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Include README in the package -->
+        <None Include="..\README.md" Pack="true" PackagePath="\"/>
+        <None Include="..\icon.png" Pack="true" PackagePath="\"/> 
+    </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App"/>
+        <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.0"/>
+        <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" Version="6.3.1"/>
+        <PackageReference Include="System.Linq.Dynamic.Core" Version="1.3.12"/>
+    </ItemGroup>
+</Project>
