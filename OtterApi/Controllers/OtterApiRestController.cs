@@ -170,14 +170,9 @@ public class OtterApiRestController(
 
         var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
 
-        // Load the no-tracking snapshot for handlers (respects query filters — 404 when filtered out).
-        var original = await LoadOriginalAsync(otterApiRouteInfo, ct);
-        if (original == null)
-            return new NotFoundObjectResult(null);
-
-        // Load the tracked entity through the same query filters so we never touch
-        // a row hidden by a tenant / soft-delete filter (replaces the old FindByIdAsync
-        // which bypassed all application-level filters).
+        // Single DB round-trip: load the tracked entity through query filters so rows hidden
+        // by a tenant / soft-delete filter return 404 rather than being silently modified.
+        // Replaces the previous two-query approach (NoTracking snapshot + second tracking load).
         var trackedSet = otterApiRouteInfo.Entity.GetDbSet(dbContext);
         trackedSet = ApplyQueryFilters(trackedSet, otterApiRouteInfo.Entity);
         trackedSet = ApplyScopedQueryFilters(trackedSet, otterApiRouteInfo.Entity);
@@ -185,6 +180,13 @@ public class OtterApiRestController(
         var tracked = (await otterApiRouteInfo.Entity.ToListAsync(trackedSet, ct)).FirstOrDefault();
         if (tracked == null)
             return new NotFoundObjectResult(null);
+
+        // Build an in-memory snapshot of the scalar property values BEFORE patch mutations.
+        // Passed to BeforeSave/AfterSave handlers as the "original" state — navigation
+        // properties are left null, consistent with the previous AsNoTracking load behaviour.
+        var original = Activator.CreateInstance(otterApiRouteInfo.Entity.EntityType)!;
+        foreach (var p in otterApiRouteInfo.Entity.Properties)
+            p.SetValue(original, p.GetValue(tracked));
 
         var patchOptions = registry?.PatchOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
 

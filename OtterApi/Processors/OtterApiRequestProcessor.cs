@@ -41,12 +41,10 @@ public class OtterApiRequestProcessor(
 
     public OtterApiRouteInfo GetRouteInfo(HttpRequest request)
     {
-        PathString path = null;
         var result = new OtterApiRouteInfo();
 
-        var apiEntity = registry.Entities
-            .Where(x => request.Path.StartsWithSegments(x.Route, out path))
-            .FirstOrDefault();
+        // O(1) lookup: at most two dictionary probes replace the previous O(n) linear scan.
+        var apiEntity = registry.FindEntityForPath(request.Path, out var path);
 
         result.Entity = apiEntity;
 
