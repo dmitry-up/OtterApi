@@ -26,7 +26,7 @@ public class FilterOperatorExpressionRegressionTests
     }
 
     // ── Bug A: "in"/"nin" detection was case-sensitive ────────────────────────
-    // IsOperatorSuported accepts "IN"/"NIN" (case-insensitive), but the internal
+    // IsOperatorSupported accepts "IN"/"NIN" (case-insensitive), but the internal
     // Contains check was case-sensitive, causing "[1,2,3]" to be treated as a
     // scalar value → FormatException instead of JSON deserialization.
 

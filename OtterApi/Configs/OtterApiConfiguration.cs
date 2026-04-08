@@ -12,86 +12,16 @@ public static class OtterApiConfiguration
 {
     public static readonly List<OtterApiOperator> Operators =
     [
-        new()
-        {
-            Name = "eq",
-            SupportsString = true,
-            SupportsValueType = true,
-            SupportsGuid = true,
-            Expression = "{propertyName} == @{index}"
-        },
-        new()
-        {
-            Name = "neq",
-            SupportsString = true,
-            SupportsValueType = true,
-            SupportsGuid = true,
-            Expression = "{propertyName} != @{index}"
-        },
-        new()
-        {
-            Name = "like",
-            SupportsString = true,
-            SupportsValueType = false,
-            SupportsGuid = false,
-            Expression = "{propertyName}.Contains(@{index})"
-        },
-        new()
-        {
-            Name = "nlike",
-            SupportsString = true,
-            SupportsValueType = false,
-            SupportsGuid = false,
-            Expression = "!{propertyName}.Contains(@{index})"
-        },
-        new()
-        {
-            Name = "lt",
-            SupportsString = false,
-            SupportsValueType = true,
-            SupportsGuid = false,
-            Expression = "{propertyName} < @{index}"
-        },
-        new()
-        {
-            Name = "lteq",
-            SupportsString = false,
-            SupportsValueType = true,
-            SupportsGuid = false,
-            Expression = "{propertyName} <= @{index}"
-        },
-        new()
-        {
-            Name = "gt",
-            SupportsString = false,
-            SupportsValueType = true,
-            SupportsGuid = false,
-            Expression = "{propertyName} > @{index}"
-        },
-        new()
-        {
-            Name = "gteq",
-            SupportsString = false,
-            SupportsValueType = true,
-            SupportsGuid = false,
-            Expression = "{propertyName} >= @{index}"
-        },
-        new()
-        {
-            Name = "in",
-            SupportsString = true,
-            SupportsValueType = true,
-            SupportsGuid = true,
-            Expression = "@{index}.Contains({propertyName})"
-        },
-        new()
-        {
-            Name = "nin",
-            SupportsString = true,
-            SupportsValueType = true,
-            SupportsGuid = true,
-            Expression = "!@{index}.Contains({propertyName})"
-        }
+        new() { Name = "eq",    SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },
+        new() { Name = "neq",   SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },
+        new() { Name = "like",  SupportsString = true,  SupportsValueType = false, SupportsGuid = false },
+        new() { Name = "nlike", SupportsString = true,  SupportsValueType = false, SupportsGuid = false },
+        new() { Name = "lt",    SupportsString = false, SupportsValueType = true,  SupportsGuid = false },
+        new() { Name = "lteq",  SupportsString = false, SupportsValueType = true,  SupportsGuid = false },
+        new() { Name = "gt",    SupportsString = false, SupportsValueType = true,  SupportsGuid = false },
+        new() { Name = "gteq",  SupportsString = false, SupportsValueType = true,  SupportsGuid = false },
+        new() { Name = "in",    SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },
+        new() { Name = "nin",   SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },
     ];
 
     public static void AddOtterApi<T>(this IServiceCollection serviceCollection, string path) where T : DbContext
@@ -122,7 +52,7 @@ public static class OtterApiConfiguration
             .ToList();
     }
 
-    public static bool IsOperatorSuported(this Type type, string comparisonOperator)
+    public static bool IsOperatorSupported(this Type type, string comparisonOperator)
     {
         type = Nullable.GetUnderlyingType(type) ?? type;
 
@@ -147,6 +77,11 @@ public static class OtterApiConfiguration
 
         return false;
     }
+
+    /// <inheritdoc cref="IsOperatorSupported"/>
+    [Obsolete("Typo in the original name — use IsOperatorSupported instead. This overload will be removed in a future version.")]
+    public static bool IsOperatorSuported(this Type type, string comparisonOperator)
+        => IsOperatorSupported(type, comparisonOperator);
 
     public static bool IsTypeSupported(this Type type)
     {

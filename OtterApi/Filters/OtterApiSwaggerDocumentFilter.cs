@@ -607,7 +607,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
         foreach (var prop in entity.Properties)
         {
             var supportedOps = OtterApiConfiguration.Operators
-                .Where(op => prop.PropertyType.IsOperatorSuported(op.Name))
+                .Where(op => prop.PropertyType.IsOperatorSupported(op.Name))
                 .Select(op => op.Name)
                 .ToList();
 
@@ -703,7 +703,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
         foreach (var prop in entity.Properties)
         {
             var supportedOps = OtterApiConfiguration.Operators
-                .Where(op => prop.PropertyType.IsOperatorSuported(op.Name))
+                .Where(op => prop.PropertyType.IsOperatorSupported(op.Name))
                 .Select(op => op.Name)
                 .ToList();
 

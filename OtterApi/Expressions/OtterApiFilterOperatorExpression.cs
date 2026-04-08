@@ -12,12 +12,12 @@ namespace OtterApi.Expressions;
 public class OtterApiFilterOperatorExpression(PropertyInfo property, string value, string comparisonOperator)
     : IOtterApiExpression<OtterApiFilterResult>
 {
-    private static readonly MethodInfo StringContains =
-        typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+    private static readonly MethodInfo StringContainsOrdinalIgnoreCase =
+        typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)])!;
 
     public OtterApiFilterResult Build()
     {
-        if (!property.PropertyType.IsOperatorSuported(comparisonOperator))
+        if (!property.PropertyType.IsOperatorSupported(comparisonOperator))
             throw new OtterApiException(
                 "INVALID_FILTER_OPERATOR",
                 $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",
@@ -54,8 +54,10 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
             "lteq"  => Expression.LessThanOrEqual(propExpr, constExpr),
             "gt"    => Expression.GreaterThan(propExpr, constExpr),
             "gteq"  => Expression.GreaterThanOrEqual(propExpr, constExpr),
-            "like"  => Expression.Call(propExpr, StringContains, constExpr),
-            "nlike" => Expression.Not(Expression.Call(propExpr, StringContains, constExpr)),
+            "like"  => Expression.Call(propExpr, StringContainsOrdinalIgnoreCase,
+                           constExpr, Expression.Constant(StringComparison.OrdinalIgnoreCase)),
+            "nlike" => Expression.Not(Expression.Call(propExpr, StringContainsOrdinalIgnoreCase,
+                           constExpr, Expression.Constant(StringComparison.OrdinalIgnoreCase))),
             _       => throw new OtterApiException(
                            "INVALID_FILTER_OPERATOR",
                            $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",

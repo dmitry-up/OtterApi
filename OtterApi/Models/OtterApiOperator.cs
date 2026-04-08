@@ -3,7 +3,6 @@
 public class OtterApiOperator
 {
     public string Name { get; set; }
-    public string Expression { get; set; }
     public bool SupportsString { get; set; }
     public bool SupportsValueType { get; set; }
     public bool SupportsGuid { get; set; }

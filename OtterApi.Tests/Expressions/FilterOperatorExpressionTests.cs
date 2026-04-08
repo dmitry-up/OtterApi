@@ -85,7 +85,18 @@ public class FilterOperatorExpressionTests
         var matched = Apply<Stub>(result.Predicate!, data);
 
         Assert.Equal(2, matched.Count);
-        Assert.All(matched, s => Assert.Contains("ali", s.Name));
+        Assert.All(matched, s => Assert.Contains("ali", s.Name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Build_Like_OnString_IsCaseInsensitive()
+    {
+        var prop    = Prop<Stub>("Name");
+        var result  = new OtterApiFilterOperatorExpression(prop, "ALI", "like").Build();
+        var data    = new[] { new Stub { Name = "alice" }, new Stub { Name = "Bob" }, new Stub { Name = "ALIAS" } };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
     }
 
     [Fact]
@@ -94,6 +105,18 @@ public class FilterOperatorExpressionTests
         var prop    = Prop<Stub>("Name");
         var result  = new OtterApiFilterOperatorExpression(prop, "ali", "nlike").Build();
         var data    = new[] { new Stub { Name = "alice" }, new Stub { Name = "Bob" } };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Single(matched);
+        Assert.Equal("Bob", matched[0].Name);
+    }
+
+    [Fact]
+    public void Build_Nlike_OnString_IsCaseInsensitive()
+    {
+        var prop    = Prop<Stub>("Name");
+        var result  = new OtterApiFilterOperatorExpression(prop, "ALI", "nlike").Build();
+        var data    = new[] { new Stub { Name = "alice" }, new Stub { Name = "Bob" }, new Stub { Name = "ALIAS" } };
         var matched = Apply<Stub>(result.Predicate!, data);
 
         Assert.Single(matched);
