@@ -208,7 +208,8 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
             if (entity.Id == null)
                 continue;
 
-            var idSchema = SchemaTypeMap[entity.Id.PropertyType]();
+            var idPropertyType = Nullable.GetUnderlyingType(entity.Id.PropertyType) ?? entity.Id.PropertyType;
+            var idSchema = SchemaTypeMap[idPropertyType]();
 
             // {id} route: GET by id + PUT + DELETE
             var idOperations = new Dictionary<OperationType, OpenApiOperation>();

@@ -17,10 +17,7 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
 
         object list = null;
 
-        if (new[]
-            {
-                "in", "nin"
-            }.Contains(comparisonOperator))
+        if (new[] { "in", "nin" }.Contains(comparisonOperator, StringComparer.OrdinalIgnoreCase))
         {
             var listType = typeof(List<>).MakeGenericType(property.PropertyType);
 

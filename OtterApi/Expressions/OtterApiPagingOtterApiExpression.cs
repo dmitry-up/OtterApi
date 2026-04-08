@@ -16,12 +16,14 @@ public class OtterApiPagingOtterApiExpression(IQueryCollection queryString, stri
         {
             if (key.ToLower() == $"{prefix}size")
             {
-                uint.TryParse(queryString[key].ToString(), out pageSize);
+                if (uint.TryParse(queryString[key].ToString(), out var parsedSize))
+                    pageSize = parsedSize;
             }
 
             if (key.ToLower() == prefix)
             {
-                uint.TryParse(queryString[key].ToString(), out page);
+                if (uint.TryParse(queryString[key].ToString(), out var parsedPage))
+                    page = parsedPage;
             }
         }
 

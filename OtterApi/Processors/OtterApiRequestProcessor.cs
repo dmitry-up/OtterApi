@@ -75,7 +75,8 @@ public class OtterApiRequestProcessor(
                     break;
 
                 default:
-                    result.Id = value;
+                    if (!string.IsNullOrEmpty(value))
+                        result.Id = value;
                     break;
             }
         }

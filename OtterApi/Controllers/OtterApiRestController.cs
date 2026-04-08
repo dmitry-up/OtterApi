@@ -100,6 +100,9 @@ public class OtterApiRestController(
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
 
+        if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
+            return new BadRequestObjectResult("Id is required in the route for PUT operations");
+
         var objectId = otterApiRouteInfo.Entity.Id.GetValue(entity);
         var routeId = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
 
@@ -134,6 +137,9 @@ public class OtterApiRestController(
     {
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
+
+        if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
+            return new BadRequestObjectResult("Id is required in the route for DELETE operations");
 
         object entity =
             await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
