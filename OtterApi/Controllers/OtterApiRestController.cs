@@ -1,6 +1,7 @@
 ﻿using System.Linq.Dynamic.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
@@ -23,6 +24,22 @@ public class OtterApiRestController(
 {
     private const string KeylessError = "Operation not allowed for keyless entities";
 
+    /// <summary>
+    /// Fallback serialization options used when the controller is created without a registry
+    /// (e.g. in unit tests). Equivalent to registry.SerializationOptions but created once statically.
+    /// </summary>
+    private static readonly JsonSerializerOptions FallbackSerializationOptions = BuildFallbackOptions();
+
+    private static JsonSerializerOptions BuildFallbackOptions()
+    {
+        var opts = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+        };
+        opts.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
+        return opts;
+    }
+
     public async Task<ObjectResult> GetAsync(OtterApiRouteInfo otterApiRouteInfo)
     {
         // ── Named custom route (e.g. GET /api/products/featured) ──────────────
@@ -38,7 +55,8 @@ public class OtterApiRestController(
             if (otterApiRouteInfo.Entity.QueryFilters.Count == 0
                 && otterApiRouteInfo.Entity.ScopedQueryFilterFactories.Count == 0)
             {
-                var result = await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
+                var result = await otterApiRouteInfo.Entity.FindByIdAsync(
+                    dbContext,
                     OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
                 return result != null ? GetOkObjectResult(result) : new NotFoundObjectResult(null);
             }
@@ -63,7 +81,7 @@ public class OtterApiRestController(
 
         foreach (var include in otterApiRouteInfo.IncludeExpression)
         {
-            dbSet = (dynamic)EntityFrameworkQueryableExtensions.Include((dynamic)dbSet, include);
+            dbSet = otterApiRouteInfo.Entity.Include(dbSet, include);
         }
 
         if (!string.IsNullOrWhiteSpace(otterApiRouteInfo.FilterExpression))
@@ -77,14 +95,14 @@ public class OtterApiRestController(
 
         if (otterApiRouteInfo.IsCount)
         {
-            return GetOkObjectResult(await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet));
+            return GetOkObjectResult(await otterApiRouteInfo.Entity.CountAsync(dbSet, CancellationToken.None));
         }
 
         if (otterApiRouteInfo.IsPageResult)
         {
             var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
             var page = otterApiRouteInfo.Page < 1 ? 1 : otterApiRouteInfo.Page;
-            return GetOkObjectResult(await GetPagedResultAsync(dbSet, page, pageSize));
+            return GetOkObjectResult(await GetPagedResultAsync(otterApiRouteInfo.Entity, dbSet, page, pageSize));
         }
 
         if (otterApiRouteInfo.Take != 0)
@@ -161,9 +179,9 @@ public class OtterApiRestController(
             return new NotFoundObjectResult(null);
 
         // Tracked entity — EF Core will detect only the modified properties
-        object tracked =
-            await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
-                OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+        object tracked = (await otterApiRouteInfo.Entity.FindByIdAsync(
+            dbContext,
+            OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType)))!;
 
         // Options to handle enums as strings, matching the rest of the library
         var patchOptions = registry?.PatchOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -211,9 +229,9 @@ public class OtterApiRestController(
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for DELETE operations");
 
-        object entity =
-            await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
-                OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+        var entity = await otterApiRouteInfo.Entity.FindByIdAsync(
+            dbContext,
+            OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
 
         if (entity == null)
             return new NotFoundObjectResult(null);
@@ -238,7 +256,7 @@ public class OtterApiRestController(
     {
         var idValue    = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
         var dbSet      = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
-        var noTracking = (IQueryable)EntityFrameworkQueryableExtensions.AsNoTracking((dynamic)dbSet);
+        var noTracking = otterApiRouteInfo.Entity.AsNoTracking(dbSet);
         noTracking = ApplyQueryFilters(noTracking, otterApiRouteInfo.Entity);
         noTracking = ApplyScopedQueryFilters(noTracking, otterApiRouteInfo.Entity);
         return (await noTracking
@@ -272,7 +290,7 @@ public class OtterApiRestController(
 
         // 3. Navigation property eager loading
         foreach (var include in routeInfo.IncludeExpression)
-            dbSet = (dynamic)EntityFrameworkQueryableExtensions.Include((dynamic)dbSet, include);
+            dbSet = routeInfo.Entity.Include(dbSet, include);
 
         // 4. Client-supplied filter
         if (!string.IsNullOrWhiteSpace(routeInfo.FilterExpression))
@@ -304,8 +322,9 @@ public class OtterApiRestController(
         return GetOkObjectResult(await dbSet.ToDynamicListAsync());
     }
 
-    private async Task<OtterApiPagedResult> GetPagedResultAsync(IQueryable dbSet, int page, int pageSize)    {
-        var total = await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet);
+    private async Task<OtterApiPagedResult> GetPagedResultAsync(OtterApiEntity entity, IQueryable dbSet, int page, int pageSize)
+    {
+        var total = await entity.CountAsync(dbSet, CancellationToken.None);
         var pagedSet = dbSet
             .Skip((page - 1) * pageSize)
             .Take(pageSize);
@@ -359,9 +378,7 @@ public class OtterApiRestController(
 
     private OkObjectResult GetOkObjectResult(object result)
     {
-        var jsonOptions = registry?.SerializationOptions
-            ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
-
+        var jsonOptions = registry?.SerializationOptions ?? FallbackSerializationOptions;
         var objectResult = new OkObjectResult(result);
         objectResult.Formatters.Add(new SystemTextJsonOutputFormatter(jsonOptions));
         return objectResult;

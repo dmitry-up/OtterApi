@@ -62,4 +62,30 @@ public class OtterApiEntity
 
     /// <summary>Handlers invoked after SaveChangesAsync. Multiple handlers run in registration order.</summary>
     public List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> PostSaveHandlers { get; set; } = [];
+
+    // ── Typed delegates — compiled once at startup, replace dynamic dispatch on every request ──
+
+    /// <summary>
+    /// Finds an entity by primary key. Equivalent to DbSet&lt;T&gt;.FindAsync(id).
+    /// Compiled at startup from the generic T — no DLR overhead per request.
+    /// </summary>
+    public Func<DbContext, object, Task<object?>> FindByIdAsync { get; set; } = null!;
+
+    /// <summary>
+    /// Wraps IQueryable&lt;T&gt;.AsNoTracking() on the untyped IQueryable.
+    /// Compiled at startup — no DLR overhead per request.
+    /// </summary>
+    public Func<IQueryable, IQueryable> AsNoTracking { get; set; } = null!;
+
+    /// <summary>
+    /// Wraps IQueryable&lt;T&gt;.CountAsync(ct) on the untyped IQueryable.
+    /// Compiled at startup — no DLR overhead per request.
+    /// </summary>
+    public Func<IQueryable, CancellationToken, Task<int>> CountAsync { get; set; } = null!;
+
+    /// <summary>
+    /// Wraps IQueryable&lt;T&gt;.Include(navigationPropertyPath) on the untyped IQueryable.
+    /// Compiled at startup — no DLR overhead per request.
+    /// </summary>
+    public Func<IQueryable, string, IQueryable> Include { get; set; } = null!;
 }
