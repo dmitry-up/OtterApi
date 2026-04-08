@@ -14,12 +14,15 @@ using OtterApi.Models;
 
 namespace OtterApi.Processors;
 
-public class OtterApiRequestProcessor(IServiceProvider serviceProvider, IObjectModelValidator objectModelValidator)
+public class OtterApiRequestProcessor(
+    IServiceProvider serviceProvider,
+    IObjectModelValidator objectModelValidator,
+    OtterApiRegistry registry)
     : IOtterApiRequestProcessor
 {
     public async Task<object> GetData(HttpRequest request, Type type)
     {
-        var baseOptions = OtterApiConfiguration.OtterApiOptions?.JsonSerializerOptions;
+        var baseOptions = registry.Options.JsonSerializerOptions;
         JsonSerializerOptions options;
 
         if (baseOptions == null)
@@ -52,7 +55,8 @@ public class OtterApiRequestProcessor(IServiceProvider serviceProvider, IObjectM
         PathString path = null;
         var result = new OtterApiRouteInfo();
 
-        var apiEntity = OtterApiConfiguration.OtterApiEntityCache.Where(x => request.Path.StartsWithSegments(x.Route, out path))
+        var apiEntity = registry.Entities
+            .Where(x => request.Path.StartsWithSegments(x.Route, out path))
             .FirstOrDefault();
 
         result.Entity = apiEntity;
@@ -101,7 +105,7 @@ public class OtterApiRequestProcessor(IServiceProvider serviceProvider, IObjectM
     public IOtterApiRestController GetController(ActionContext actionContext, Type dbContextType)
     {
         var dbContext = (DbContext)serviceProvider.GetRequiredService(dbContextType);
-        return new OtterApiRestController(dbContext, actionContext, objectModelValidator);
+        return new OtterApiRestController(dbContext, actionContext, objectModelValidator, registry.Options);
     }
 
     public IActionResultExecutor<ObjectResult> GetActionExecutor()

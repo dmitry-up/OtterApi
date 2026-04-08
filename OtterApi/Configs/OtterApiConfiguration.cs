@@ -94,28 +94,28 @@ public static class OtterApiConfiguration
         }
     ];
 
-    private static readonly List<OtterApiEntity> _otterApiEntityCache = [];
-
-    public static IReadOnlyList<OtterApiEntity> OtterApiEntityCache => _otterApiEntityCache;
-
-    public static OtterApiOptions? OtterApiOptions { get; private set; }
-
     public static void AddOtterApi<T>(this IServiceCollection serviceCollection, string path) where T : DbContext
     {
         serviceCollection.AddOtterApi<T>(options => options.Path = path);
     }
 
-    public static void AddOtterApi<T>(this IServiceCollection serviceCollection, Action<OtterApiOptions> options) where T : DbContext
+    public static void AddOtterApi<T>(this IServiceCollection serviceCollection, Action<OtterApiOptions> configure) where T : DbContext
     {
-        var op = new OtterApiOptions();
-        options(op);
-        _otterApiEntityCache.AddRange(Init<T>(op));
+        var options  = new OtterApiOptions();
+        configure(options);
+
+        var entities = options.EntityBuilders
+            .Select(b => b.Build(typeof(T), options))
+            .ToList();
+
+        var registry = new OtterApiRegistry(entities, options);
+
+        serviceCollection.AddSingleton(registry);
         serviceCollection.AddTransient<IOtterApiRequestProcessor, OtterApiRequestProcessor>();
     }
 
     public static List<OtterApiEntity> Init<T>(OtterApiOptions options) where T : DbContext
     {
-        OtterApiOptions = options;
 
         return options.EntityBuilders
             .Select(b => b.Build(typeof(T), options))

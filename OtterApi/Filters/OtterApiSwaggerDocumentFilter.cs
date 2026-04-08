@@ -7,7 +7,7 @@ using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace OtterApi.Filters;
 
-public class OtterApiSwaggerDocumentFilter : IDocumentFilter
+public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumentFilter
 {
     private static readonly Dictionary<Type, Func<OpenApiSchema>> SchemaTypeMap = new()
     {
@@ -104,7 +104,7 @@ public class OtterApiSwaggerDocumentFilter : IDocumentFilter
 
     public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
     {
-        foreach (var entity in OtterApiConfiguration.OtterApiEntityCache)
+        foreach (var entity in registry.Entities)
         {
             var allowGet    = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Get);
             var allowPost   = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Post);
@@ -393,7 +393,7 @@ public class OtterApiSwaggerDocumentFilter : IDocumentFilter
         }
 
 
-        foreach (var entity in OtterApiConfiguration.OtterApiEntityCache)
+        foreach (var entity in registry.Entities)
         {
             if (!swaggerDoc.Components.Schemas.ContainsKey(entity.EntityType.Name.ToLower()))
             {
@@ -424,7 +424,7 @@ public class OtterApiSwaggerDocumentFilter : IDocumentFilter
             }
         }
 
-        if (OtterApiConfiguration.OtterApiEntityCache.Any(x => x.ExposePagedResult)
+        if (registry.Entities.Any(x => x.ExposePagedResult)
             && !swaggerDoc.Components.Schemas.ContainsKey("pagedresult"))
         {
             swaggerDoc.Components.Schemas.Add("pagedresult", new OpenApiSchema

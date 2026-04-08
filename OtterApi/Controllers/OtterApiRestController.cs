@@ -16,7 +16,8 @@ namespace OtterApi.Controllers;
 public class OtterApiRestController(
     DbContext dbContext,
     ActionContext actionContext,
-    IObjectModelValidator objectModelValidator)
+    IObjectModelValidator objectModelValidator,
+    OtterApiOptions? options = null)
     : IOtterApiRestController
 {
     private const string KeylessError = "Operation not allowed for keyless entities";
@@ -197,25 +198,25 @@ public class OtterApiRestController(
 
     private OkObjectResult GetOkObjectResult(object result)
     {
-        var baseOptions = OtterApiConfiguration.OtterApiOptions?.JsonSerializerOptions;
-        JsonSerializerOptions options;
+        var baseOptions = options?.JsonSerializerOptions;
+        JsonSerializerOptions jsonOptions;
 
         if (baseOptions == null)
         {
-            options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
         }
         else
         {
-            options = new JsonSerializerOptions(baseOptions);
+            jsonOptions = new JsonSerializerOptions(baseOptions);
         }
 
-        options.TypeInfoResolver ??= new DefaultJsonTypeInfoResolver();
+        jsonOptions.TypeInfoResolver ??= new DefaultJsonTypeInfoResolver();
 
-        if (!options.Converters.Any(c => c is OtterApiCaseInsensitiveEnumConverterFactory))
-            options.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
+        if (!jsonOptions.Converters.Any(c => c is OtterApiCaseInsensitiveEnumConverterFactory))
+            jsonOptions.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
 
         var objectResult = new OkObjectResult(result);
-        objectResult.Formatters.Add(new SystemTextJsonOutputFormatter(options));
+        objectResult.Formatters.Add(new SystemTextJsonOutputFormatter(jsonOptions));
         return objectResult;
     }
 }
