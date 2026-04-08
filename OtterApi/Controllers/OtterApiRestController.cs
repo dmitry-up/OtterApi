@@ -1,7 +1,6 @@
 ﻿using System.Linq.Dynamic.Core;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
@@ -19,7 +18,7 @@ public class OtterApiRestController(
     ActionContext actionContext,
     IObjectModelValidator objectModelValidator,
     IServiceProvider? serviceProvider = null,
-    OtterApiOptions? options = null)
+    OtterApiRegistry? registry = null)
     : IOtterApiRestController
 {
     private const string KeylessError = "Operation not allowed for keyless entities";
@@ -167,8 +166,7 @@ public class OtterApiRestController(
                 OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
 
         // Options to handle enums as strings, matching the rest of the library
-        var patchOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        patchOptions.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
+        var patchOptions = registry?.PatchOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
         // Apply only the fields present in the patch document
         foreach (var (key, node) in patch)
@@ -361,22 +359,8 @@ public class OtterApiRestController(
 
     private OkObjectResult GetOkObjectResult(object result)
     {
-        var baseOptions = options?.JsonSerializerOptions;
-        JsonSerializerOptions jsonOptions;
-
-        if (baseOptions == null)
-        {
-            jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-        }
-        else
-        {
-            jsonOptions = new JsonSerializerOptions(baseOptions);
-        }
-
-        jsonOptions.TypeInfoResolver ??= new DefaultJsonTypeInfoResolver();
-
-        if (!jsonOptions.Converters.Any(c => c is OtterApiCaseInsensitiveEnumConverterFactory))
-            jsonOptions.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
+        var jsonOptions = registry?.SerializationOptions
+            ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
         var objectResult = new OkObjectResult(result);
         objectResult.Formatters.Add(new SystemTextJsonOutputFormatter(jsonOptions));

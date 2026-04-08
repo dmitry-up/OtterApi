@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using OtterApi.Builders;
 using OtterApi.Configs;
 using OtterApi.Controllers;
-using OtterApi.Converters;
 using OtterApi.Interfaces;
 using OtterApi.Models;
 
@@ -23,31 +22,7 @@ public class OtterApiRequestProcessor(
 {
     public async Task<object> GetData(HttpRequest request, Type type)
     {
-        var baseOptions = registry.Options.JsonSerializerOptions;
-        JsonSerializerOptions options;
-
-        if (baseOptions == null)
-        {
-            options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
-            options.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
-        }
-        else
-        {
-            options = baseOptions.PropertyNameCaseInsensitive
-                ? new JsonSerializerOptions(baseOptions)
-                : new JsonSerializerOptions(baseOptions)
-                {
-                    PropertyNameCaseInsensitive = true
-                };
-
-            if (!options.Converters.Any(c => c is OtterApiCaseInsensitiveEnumConverterFactory))
-                options.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
-        }
-
-        return await JsonSerializer.DeserializeAsync(request.Body, type, options);
+        return await JsonSerializer.DeserializeAsync(request.Body, type, registry.DeserializationOptions);
     }
 
     public async Task<JsonObject> GetPatchData(HttpRequest request)
@@ -122,7 +97,7 @@ public class OtterApiRequestProcessor(
     public IOtterApiRestController GetController(ActionContext actionContext, Type dbContextType)
     {
         var dbContext = (DbContext)serviceProvider.GetRequiredService(dbContextType);
-        return new OtterApiRestController(dbContext, actionContext, objectModelValidator, serviceProvider, registry.Options);
+        return new OtterApiRestController(dbContext, actionContext, objectModelValidator, serviceProvider, registry);
     }
 
     public IActionResultExecutor<ObjectResult> GetActionExecutor()

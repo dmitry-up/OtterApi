@@ -427,9 +427,9 @@ GET /api/products
 **Response `200 OK`:**
 ```json
 [
-  { "id": 3, "name": "Laptop",   "price": 999.99, "stock": 10, "isActive": true,  "status": "active",   "categoryId": 1 },
-  { "id": 2, "name": "Mouse",    "price": 29.99,  "stock": 50, "isActive": true,  "status": "active",   "categoryId": 1 },
-  { "id": 1, "name": "Old Desk", "price": 349.00, "stock": 5,  "isActive": false, "status": "pending",  "categoryId": 2 }
+  { "id": 3, "name": "Laptop",   "price": 999.99, "stock": 10, "isActive": true,  "status": 1, "categoryId": 1 },
+  { "id": 2, "name": "Mouse",    "price": 29.99,  "stock": 50, "isActive": true,  "status": 1, "categoryId": 1 },
+  { "id": 1, "name": "Old Desk", "price": 349.00, "stock": 5,  "isActive": false, "status": 0, "categoryId": 2 }
 ]
 ```
 
@@ -466,7 +466,7 @@ Content-Type: application/json
   "price": 79.99,
   "stock": 25,
   "isActive": true,
-  "status": "pending",
+  "status": 0,
   "categoryId": 1
 }
 ```
@@ -474,6 +474,8 @@ Content-Type: application/json
 **Responses:**
 - `201 Created` — includes `Location: /api/products/4` header and the created object in the body
 - `400 Bad Request` — model validation failed (e.g. a `[Required]` field is missing)
+
+> **Note.** Enum fields in the request body accept both integers (`0`) and strings (`"Pending"`) — the deserialization is case-insensitive. Enum fields in the response are always returned as integers.
 
 ---
 
@@ -491,7 +493,7 @@ Content-Type: application/json
   "price": 129.99,
   "stock": 20,
   "isActive": true,
-  "status": "active",
+  "status": 1,
   "categoryId": 1
 }
 ```
@@ -1156,13 +1158,13 @@ GET /api/v1/products/count?filter[isActive]=true
 POST /api/v1/products
 Authorization: Bearer <token>
 Content-Type: application/json
-{ "name": "Widget", "price": 9.99, "stock": 100, "isActive": true, "status": "pending", "categoryId": 1 }
+{ "name": "Widget", "price": 9.99, "stock": 100, "isActive": true, "status": 0, "categoryId": 1 }
 
 # Update a product
 PUT /api/v1/products/7
 Authorization: Bearer <token>
 Content-Type: application/json
-{ "id": 7, "name": "Widget Pro", "price": 14.99, "stock": 80, "isActive": true, "status": "active", "categoryId": 1 }
+{ "id": 7, "name": "Widget Pro", "price": 14.99, "stock": 80, "isActive": true, "status": 1, "categoryId": 1 }
 
 # Delete a product (requires Admin role)
 DELETE /api/v1/products/7
@@ -1184,7 +1186,7 @@ Authorization: Bearer <token>
 | **Keyless entities** | `GET` only (list + filter). POST, PUT, PATCH, and DELETE throw an exception. |
 | **`operator=or` is global** | The `operator=or` parameter switches the join logic for **all** client-supplied filters in the request. Mixing AND and OR for different fields in a single query is not supported. |
 | **Validation** | OtterApi validates Data Annotations (`[Required]`, `[MaxLength]`, etc.) using the standard `IObjectModelValidator`. Invalid requests return `400 Bad Request` with the model state. |
-| **Enum deserialization** | Enums are deserialized case-insensitively as both strings and numbers. |
+| **Enum serialization** | Enums are **serialized as integers** in all responses. Enums are deserialized case-insensitively as both strings (`"Pending"`) and integers (`0`) in request bodies. Swagger schemas include `x-enumNames` and a `description` mapping integers to names (e.g. `0 = Pending, 1 = Active`). |
 | **Filter operator names** | Operator names (`eq`, `like`, `in`, etc.) are case-insensitive in the URL. |
 | **PUT / DELETE without Id** | `PUT /api/products` and `DELETE /api/products` (without an Id segment) return `400 Bad Request`. The Id must always be part of the URL path. |
 | **Trailing slash** | A trailing slash (e.g. `/api/products/`) is treated as a collection request, identical to `/api/products`. |

@@ -1,4 +1,5 @@
 ﻿using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Interfaces;
 using Microsoft.OpenApi.Models;
 using OtterApi.Configs;
 using OtterApi.Enums;
@@ -536,13 +537,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                     var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                     if (type.IsEnum)
                     {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, new OpenApiSchema
-                        {
-                            Type = "integer",
-                            Format = "int32",
-                            Enum = Enum.GetNames(type).Select(name => (IOpenApiAny)new OpenApiInteger((int)Enum.Parse(type, name)))
-                                .ToList()
-                        });
+                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
                     }
                     else
                     {
@@ -567,15 +562,9 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                 if (!prop.PropertyType.IsGenericType)
                 {
                     if (type.IsEnum)
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, new OpenApiSchema
                         {
-                            Type = "integer",
-                            Format = "int32",
-                            Enum = Enum.GetNames(type).Select(name => (IOpenApiAny)new OpenApiInteger((int)Enum.Parse(type, name)))
-                                .ToList()
-                        });
-                    }
+                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
+                        }
                     else
                     {
                         swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, SchemaTypeMap[type]());
@@ -602,5 +591,35 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
     {
         return string.Join("",
             path.Split("/", StringSplitOptions.RemoveEmptyEntries).Select(x => x.First().ToString().ToUpper() + x.Substring(1)));
+    }
+
+    /// <summary>
+    /// Builds an OpenAPI integer schema for an enum type.
+    /// - type: integer / format: int32  — matches actual serialization (WriteNumberValue)
+    /// - enum: [0, 1, 2, ...]           — allowed numeric values
+    /// - description: "0 = Pending, …"  — human-readable mapping
+    /// - x-enumNames: ["Pending", …]    — machine-readable names for code generators
+    ///                                     (NSwag, OpenAPI Generator, Kiota, etc.)
+    /// </summary>
+    private static OpenApiSchema BuildEnumSchema(Type enumType)
+    {
+        var names  = Enum.GetNames(enumType);
+        var values = names.Select(n => (int)Enum.Parse(enumType, n)).ToArray();
+
+        var namesExtension = new OpenApiArray();
+        foreach (var n in names)
+            namesExtension.Add(new OpenApiString(n));
+
+        return new OpenApiSchema
+        {
+            Type        = "integer",
+            Format      = "int32",
+            Enum        = values.Select(v => (IOpenApiAny)new OpenApiInteger(v)).ToList(),
+            Description = string.Join(", ", values.Select((v, i) => $"{v} = {names[i]}")),
+            Extensions  = new Dictionary<string, IOpenApiExtension>
+            {
+                ["x-enumNames"] = namesExtension
+            }
+        };
     }
 }
