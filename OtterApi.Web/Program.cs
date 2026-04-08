@@ -11,6 +11,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<DemoDbContext>(opt =>
     opt.UseInMemoryDatabase("OtterApiDemo"));
 
+builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddOtterApi<DemoDbContext>(options =>
 {
     options.Path = "/api";
@@ -48,11 +50,24 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
         .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post)
         .ExposePagedResult()
         .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
+        // Scoped filter: каждый пользователь видит только свои заказы (по email из токена)
+        // .WithScopedQueryFilter(sp =>
+        // {
+        //     var http = sp.GetRequiredService<IHttpContextAccessor>();
+        //     var email = http.HttpContext?.User.FindFirst("email")?.Value ?? "";
+        //     return o => o.CustomerEmail == email;
+        // })
         .WithCustomRoute("latest",
             sort:   "CreatedAt desc",
             take:   1,
             single: true)
+        // Цепочка: оба хендлера вызываются по порядку
         .BeforeSave(new OrderBeforeSaveHandler())
+        .BeforeSave((_, order, _, op) =>
+        {
+            if (op == OtterApiCrudOperation.Post)
+                Console.WriteLine($"[Audit] New order: {order.CustomerName} → {order.TotalPrice:C}");
+        })
         .AfterSave(new OrderAfterSaveHandler());
 });
 

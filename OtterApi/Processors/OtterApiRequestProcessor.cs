@@ -122,7 +122,7 @@ public class OtterApiRequestProcessor(
     public IOtterApiRestController GetController(ActionContext actionContext, Type dbContextType)
     {
         var dbContext = (DbContext)serviceProvider.GetRequiredService(dbContextType);
-        return new OtterApiRestController(dbContext, actionContext, objectModelValidator, registry.Options);
+        return new OtterApiRestController(dbContext, actionContext, objectModelValidator, serviceProvider, registry.Options);
     }
 
     public IActionResultExecutor<ObjectResult> GetActionExecutor()

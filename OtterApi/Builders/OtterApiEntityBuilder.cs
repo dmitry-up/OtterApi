@@ -18,12 +18,13 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private bool exposePagedResult;
     private string? getPolicy;
     private string? postPolicy;
-    private Func<DbContext, object, object?, OtterApiCrudOperation, Task>? postSaveHandler;
-    private Func<DbContext, object, object?, OtterApiCrudOperation, Task>? preSaveHandler;
     private string? putPolicy;
     private OtterApiCrudOperation allowedOperations = OtterApiCrudOperation.All;
     private readonly List<Func<IQueryable, IQueryable>> queryFilters = [];
+    private readonly List<Func<IServiceProvider, Func<IQueryable, IQueryable>>> scopedQueryFilterFactories = [];
     private readonly List<OtterApiCustomRoute> customRoutes = [];
+    private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> preSaveHandlers = [];
+    private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> postSaveHandlers = [];
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -89,20 +90,38 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
         return this;
     }
 
+    /// <summary>
+    /// Adds a per-request scoped query filter resolved at runtime via IServiceProvider.
+    /// Use this for dynamic filtering that depends on the current HTTP context
+    /// (e.g. userId or tenantId from the JWT token).
+    /// Requires IHttpContextAccessor: services.AddHttpContextAccessor().
+    /// Multiple calls chain filters with AND semantics.
+    /// </summary>
+    public OtterApiEntityBuilder<T> WithScopedQueryFilter(
+        Func<IServiceProvider, Expression<Func<T, bool>>> predicateFactory)
+    {
+        scopedQueryFilterFactories.Add(sp =>
+        {
+            var predicate = predicateFactory(sp);
+            return q => ((IQueryable<T>)q).Where(predicate);
+        });
+        return this;
+    }
+
     public OtterApiEntityBuilder<T> BeforeSave(Action<DbContext, T, T?, OtterApiCrudOperation> handler)
     {
-        preSaveHandler = (ctx, newEntity, originalEntity, op) =>
+        preSaveHandlers.Add((ctx, newEntity, originalEntity, op) =>
         {
             handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op);
             return Task.CompletedTask;
-        };
+        });
         return this;
     }
 
     public OtterApiEntityBuilder<T> BeforeSave(Func<DbContext, T, T?, OtterApiCrudOperation, Task> handler)
     {
-        preSaveHandler = (ctx, newEntity, originalEntity, op) =>
-            handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op);
+        preSaveHandlers.Add((ctx, newEntity, originalEntity, op) =>
+            handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op));
         return this;
     }
 
@@ -111,18 +130,18 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
 
     public OtterApiEntityBuilder<T> AfterSave(Action<DbContext, T, T?, OtterApiCrudOperation> handler)
     {
-        postSaveHandler = (ctx, newEntity, originalEntity, op) =>
+        postSaveHandlers.Add((ctx, newEntity, originalEntity, op) =>
         {
             handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op);
             return Task.CompletedTask;
-        };
+        });
         return this;
     }
 
     public OtterApiEntityBuilder<T> AfterSave(Func<DbContext, T, T?, OtterApiCrudOperation, Task> handler)
     {
-        postSaveHandler = (ctx, newEntity, originalEntity, op) =>
-            handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op);
+        postSaveHandlers.Add((ctx, newEntity, originalEntity, op) =>
+            handler(ctx, (T)newEntity, originalEntity is T orig ? orig : default, op));
         return this;
     }
 
@@ -209,6 +228,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             ExposePagedResult = exposePagedResult,
             AllowedOperations = allowedOperations,
             QueryFilters = queryFilters,
+            ScopedQueryFilterFactories = scopedQueryFilterFactories,
             CustomRoutes = customRoutes,
             Properties = entityType.GetProperties()
                 .Where(x => x.PropertyType.IsTypeSupported()).ToList(),
@@ -216,8 +236,8 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
                 .Where(x => !x.PropertyType.IsTypeSupported()).ToList(),
             Id = entityType.GetProperties()
                 .FirstOrDefault(x => x.IsDefined(typeof(KeyAttribute), false)),
-            PreSaveHandler = preSaveHandler,
-            PostSaveHandler = postSaveHandler
+            PreSaveHandlers  = preSaveHandlers,
+            PostSaveHandlers = postSaveHandlers
         };
     }
 }

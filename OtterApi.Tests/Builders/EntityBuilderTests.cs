@@ -214,7 +214,7 @@ public class EntityBuilderTests
         var options = OptionsWithPath("/api");
         var entity  = options.Entity<TestProduct>("/products").Build(typeof(TestDbContext), options);
 
-        Assert.Null(entity.PreSaveHandler);
+        Assert.Empty(entity.PreSaveHandlers);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public class EntityBuilderTests
         var options = OptionsWithPath("/api");
         var entity  = options.Entity<TestProduct>("/products").Build(typeof(TestDbContext), options);
 
-        Assert.Null(entity.PostSaveHandler);
+        Assert.Empty(entity.PostSaveHandlers);
     }
 
     [Fact]
@@ -238,9 +238,8 @@ public class EntityBuilderTests
         using var db  = DbContextFactory.CreateInMemory();
         var product   = new TestProduct { Id = 1, Name = "X" };
 
-        var handler = apiEntity.PreSaveHandler;
-        Assert.NotNull(handler);
-        await handler(db, product, null, OtterApiCrudOperation.Post);
+        Assert.Single(apiEntity.PreSaveHandlers);
+        await apiEntity.PreSaveHandlers[0](db, product, null, OtterApiCrudOperation.Post);
 
         Assert.True(called);
     }
@@ -257,9 +256,8 @@ public class EntityBuilderTests
         using var db  = DbContextFactory.CreateInMemory();
         var product   = new TestProduct { Id = 1, Name = "X" };
 
-        var handler = apiEntity.PostSaveHandler;
-        Assert.NotNull(handler);
-        await handler(db, product, null, OtterApiCrudOperation.Post);
+        Assert.Single(apiEntity.PostSaveHandlers);
+        await apiEntity.PostSaveHandlers[0](db, product, null, OtterApiCrudOperation.Post);
 
         Assert.True(called);
     }
@@ -275,6 +273,8 @@ public class EntityBuilderTests
         Assert.Equal(typeof(TestDbContext), entity.DbContextType);
     }
 }
+
+
 
 
 

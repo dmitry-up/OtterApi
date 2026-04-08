@@ -44,14 +44,22 @@ public class OtterApiEntity
     public List<Func<IQueryable, IQueryable>> QueryFilters { get; set; } = [];
 
     /// <summary>
+    /// Per-request scoped query filters resolved at runtime via IServiceProvider.
+    /// Used for dynamic filtering dependent on the current HTTP context
+    /// (e.g. userId or tenantId from the JWT token).
+    /// Requires IHttpContextAccessor to be registered: services.AddHttpContextAccessor().
+    /// </summary>
+    public List<Func<IServiceProvider, Func<IQueryable, IQueryable>>> ScopedQueryFilterFactories { get; set; } = [];
+
+    /// <summary>
     /// Named custom GET routes registered via <c>.WithCustomRoute(...)</c>.
     /// Each route is a pre-configured preset exposed at <c>{entityRoute}/{slug}</c>.
     /// </summary>
     public List<OtterApiCustomRoute> CustomRoutes { get; set; } = [];
 
-    /// <summary>newEntity = incoming data, originalEntity = current DB state (null for POST)</summary>
-    public Func<DbContext, object, object?, OtterApiCrudOperation, Task>? PreSaveHandler { get; set; }
+    /// <summary>Handlers invoked before SaveChangesAsync. Multiple handlers run in registration order.</summary>
+    public List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> PreSaveHandlers { get; set; } = [];
 
-    /// <summary>newEntity = saved data, originalEntity = DB state before save (null for POST)</summary>
-    public Func<DbContext, object, object?, OtterApiCrudOperation, Task>? PostSaveHandler { get; set; }
+    /// <summary>Handlers invoked after SaveChangesAsync. Multiple handlers run in registration order.</summary>
+    public List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> PostSaveHandlers { get; set; } = [];
 }
