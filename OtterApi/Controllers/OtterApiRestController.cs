@@ -90,13 +90,16 @@ public class OtterApiRestController(
 
         if (otterApiRouteInfo.IsPageResult)
         {
-            var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
+            var pageSize = ClampPageSize(otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take);
             var page     = otterApiRouteInfo.Page < 1 ? 1 : otterApiRouteInfo.Page;
             return GetOkObjectResult(await GetPagedResultAsync(otterApiRouteInfo.Entity, dbSet, page, pageSize, ct));
         }
 
         if (otterApiRouteInfo.Take != 0)
-            dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, otterApiRouteInfo.Skip), otterApiRouteInfo.Take);
+        {
+            var take = ClampPageSize(otterApiRouteInfo.Take);
+            dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, otterApiRouteInfo.Skip), take);
+        }
 
         return GetOkObjectResult(await otterApiRouteInfo.Entity.ToListAsync(dbSet, ct));
     }
@@ -287,7 +290,7 @@ public class OtterApiRestController(
         }
 
         // 6b. Apply take/skip: client-specified take overrides custom route take
-        var take = routeInfo.Take != 0 ? routeInfo.Take : cr.Take;
+        var take = ClampPageSize(routeInfo.Take != 0 ? routeInfo.Take : cr.Take);
         if (take > 0)
             dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, routeInfo.Skip), take);
         else if (routeInfo.Skip > 0)
@@ -343,6 +346,16 @@ public class OtterApiRestController(
         foreach (var factory in entity.ScopedQueryFilterFactories)
             dbSet = factory(serviceProvider)(dbSet);
         return dbSet;
+    }
+
+    /// <summary>
+    /// Clamps <paramref name="size"/> to <see cref="OtterApiOptions.MaxPageSize"/> when a limit is configured.
+    /// Returns <paramref name="size"/> unchanged when <c>MaxPageSize == 0</c> (no limit).
+    /// </summary>
+    private int ClampPageSize(int size)
+    {
+        var max = registry?.Options.MaxPageSize ?? 0;
+        return (max > 0 && size > max) ? max : size;
     }
 
     private OkObjectResult GetOkObjectResult(object result)

@@ -107,6 +107,7 @@ services.AddOtterApi<AppDbContext>("/api");
 services.AddOtterApi<AppDbContext>(options =>
 {
     options.Path = "/api";
+    options.MaxPageSize = 100;    // no request can return more than 100 items
     options.Entity<Product>("products");
     options.Entity<Category>("categories").Authorize();
     // ...
@@ -117,6 +118,7 @@ services.AddOtterApi<AppDbContext>(options =>
 |---|---|---|
 | `Path` | `string` | Base prefix for all generated routes. Example: `/api/v1` |
 | `JsonSerializerOptions` | `JsonSerializerOptions?` | Global serialization options. See below. |
+| `MaxPageSize` | `int` | Server-side cap on the number of items per page. Default `0` = no limit. When set, any client-supplied `?pagesize=` value exceeding this cap is silently clamped. Applies to regular list requests, `/pagedresult`, and custom routes. |
 
 ### UseOtterApi
 
@@ -718,7 +720,9 @@ GET /api/products?sort[price]=asc&sort[name]=desc
 | Parameter | Description |
 |---|---|
 | `page` | Page number, starting from 1 (default: 1). Non-numeric or zero values silently default to 1. |
-| `pagesize` | Number of items per page. Non-numeric values are ignored (no pagination applied). |
+| `pagesize` | Number of items per page. Non-numeric values are ignored (no pagination applied). Clamped to `MaxPageSize` when that option is configured. |
+
+> **Server-side cap.** Set `options.MaxPageSize` to protect against `?pagesize=1000000`. Any value over the cap is silently reduced to the cap value.
 
 ```http
 GET /api/products?page=1&pagesize=20
@@ -1339,6 +1343,7 @@ Authorization: Bearer <token>
 | Limitation | Details |
 |---|---|
 | **Single `[Key]`** | Composite primary keys are not supported. |
+| **`MaxPageSize` default** | `MaxPageSize` defaults to `0` (no limit). Set it explicitly when exposing large tables to the public internet. |
 | **EF Core `DbSet`** | The entity must be registered as `DbSet<T>` in the provided `DbContext`. If it is not, an `InvalidOperationException` is thrown at startup. |
 | **Filterable property types** | Supported: primitives, `string`, `Guid`, `DateTime`, `DateTimeOffset`, `enum`, and nullable variants. Objects and collections cannot be used as filter fields. |
 | **`include` depth** | Only navigation properties declared directly on the entity are loaded. Nested includes (deeper than one level) are not supported. Unknown property names in `include` are silently ignored. |
