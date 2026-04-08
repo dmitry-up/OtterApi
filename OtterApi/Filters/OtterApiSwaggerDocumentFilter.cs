@@ -212,7 +212,9 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                 continue;
 
             var idPropertyType = Nullable.GetUnderlyingType(entity.Id.PropertyType) ?? entity.Id.PropertyType;
-            var idSchema = SchemaTypeMap[idPropertyType]();
+            var idSchema = SchemaTypeMap.TryGetValue(idPropertyType, out var idSchemaFactory)
+                ? idSchemaFactory()
+                : new OpenApiSchema { Type = "string" };
 
             // {id} route: GET by id + PUT + DELETE
             var idOperations = new Dictionary<OperationType, OpenApiOperation>();
@@ -543,9 +545,14 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                     {
                         swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
                     }
+                    else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
+                    {
+                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, schemaFactory());
+                    }
                     else
                     {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, SchemaTypeMap[type]());
+                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name,
+                            new OpenApiSchema { Type = "object" });
                     }
                 }
             }
@@ -563,17 +570,22 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
             foreach (var prop in typeof(OtterApiPagedResult).GetProperties())
             {
                 var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                if (!prop.PropertyType.IsGenericType)
-                {
-                    if (type.IsEnum)
+                    if (!prop.PropertyType.IsGenericType)
+                    {
+                        if (type.IsEnum)
                         {
                             swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
                         }
-                    else
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, SchemaTypeMap[type]());
+                        else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
+                        {
+                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, schemaFactory());
+                        }
+                        else
+                        {
+                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name,
+                                new OpenApiSchema { Type = "object" });
+                        }
                     }
-                }
                 else
                 {
                     swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, new OpenApiSchema

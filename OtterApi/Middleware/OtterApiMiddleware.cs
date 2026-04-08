@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using OtterApi.Enums;
 using OtterApi.Exceptions;
 using OtterApi.Interfaces;
@@ -87,6 +88,35 @@ public class OtterApiMiddleware(RequestDelegate next)
                 {
                     code = ex.Code,
                     message = ex.Message
+                }));
+                return;
+            }
+            catch (JsonException)
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code = "INVALID_JSON",
+                    message = "The request body contains invalid JSON."
+                }));
+                return;
+            }
+            catch (DbUpdateException ex)
+            {
+                var inner = ex.InnerException?.Message ?? ex.Message;
+                var isConflict = inner.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+                              || inner.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                              || inner.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase);
+
+                context.Response.StatusCode = isConflict ? 409 : 422;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = isConflict ? "CONFLICT" : "DB_UPDATE_ERROR",
+                    message = isConflict
+                        ? "A record with the same key or unique field already exists."
+                        : "The database update failed. Check for constraint violations."
                 }));
                 return;
             }

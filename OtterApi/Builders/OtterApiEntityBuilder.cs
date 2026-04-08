@@ -230,9 +230,15 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
         var castToQ    = Expression.Convert(propAccess, typeof(IQueryable));
         var getDbSet   = Expression.Lambda<Func<DbContext, IQueryable>>(castToQ, ctxParam).Compile();
 
-        // ── Compile WhereId and OrderByIdDesc from the [Key] property ───────
-        var idPropInfo = entityType.GetProperties()
-            .FirstOrDefault(p => p.IsDefined(typeof(KeyAttribute), false));
+        // ── Resolve primary key: [Key] attribute → "Id" convention → "{ClassName}Id" convention ──
+        var idPropInfo =
+            entityType.GetProperties().FirstOrDefault(p => p.IsDefined(typeof(KeyAttribute), false))
+            ?? entityType.GetProperties().FirstOrDefault(p =>
+                p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase))
+            ?? entityType.GetProperties().FirstOrDefault(p =>
+                p.Name.Equals($"{entityType.Name}Id", StringComparison.OrdinalIgnoreCase));
+
+        // ── Compile WhereId and OrderByIdDesc delegates ───────────────────────
 
         Func<IQueryable, object, IQueryable> whereId = (q, _) => q; // no-op for keyless
         Func<IQueryable, IQueryable> orderByIdDesc   = q => q;      // no-op for keyless

@@ -118,7 +118,7 @@ services.AddOtterApi<AppDbContext>(options =>
 |---|---|---|
 | `Path` | `string` | Base prefix for all generated routes. Example: `/api/v1` |
 | `JsonSerializerOptions` | `JsonSerializerOptions?` | Global serialization options. See below. |
-| `MaxPageSize` | `int` | Server-side cap on the number of items per page. Default `0` = no limit. When set, any client-supplied `?pagesize=` value exceeding this cap is silently clamped. Applies to regular list requests, `/pagedresult`, and custom routes. |
+| `MaxPageSize` | `int` | Server-side cap on the number of items per page. Default `1000`. Set to `0` to disable the limit (use with caution on large tables). When set, any client-supplied `?pagesize=` value exceeding this cap is silently clamped. Applies to regular list requests, `/pagedresult`, and custom routes. |
 
 ### UseOtterApi
 
@@ -182,7 +182,11 @@ options.Entity<Product>("products")
 **Entity requirements:**
 
 - Must be registered as `DbSet<T>` in your `DbContext`.
-- The key property must be marked with `[Key]` (or the entity must be keyless — GET only).
+- The primary key is detected in the following order:
+  1. A property marked with `[Key]`
+  2. A property named `Id` (case-insensitive)
+  3. A property named `{ClassName}Id` (case-insensitive, e.g. `ProductId` for class `Product`)
+  - If none of the above is found, the entity is treated as **keyless** (GET only).
 - Filterable/sortable property types: primitives, `string`, `Guid`, `DateTime`, `DateTimeOffset`, `enum`, and nullable variants of all the above.
 - Navigation properties (collections, nested objects) are automatically excluded from filtering but are available via `?include=`.
 
@@ -720,9 +724,9 @@ GET /api/products?sort[price]=asc&sort[name]=desc
 | Parameter | Description |
 |---|---|
 | `page` | Page number, starting from 1 (default: 1). Non-numeric or zero values silently default to 1. |
-| `pagesize` | Number of items per page. Non-numeric values are ignored (no pagination applied). Clamped to `MaxPageSize` when that option is configured. |
+| `pagesize` | Number of items per page. Non-numeric values are ignored (no pagination applied). Clamped to `MaxPageSize` (default `1000`). |
 
-> **Server-side cap.** Set `options.MaxPageSize` to protect against `?pagesize=1000000`. Any value over the cap is silently reduced to the cap value.
+> **Server-side cap.** `MaxPageSize` defaults to `1000`. Override it via `options.MaxPageSize`. Set to `0` to disable the cap (use with caution on large tables). Any value over the cap is silently reduced to the cap value.
 
 ```http
 GET /api/products?page=1&pagesize=20
@@ -1101,6 +1105,10 @@ OtterApi itself throws `OtterApiException` in the following situations:
 | Code | Status | When |
 |---|---|---|
 | `INVALID_FILTER_OPERATOR` | `400` | Client uses an operator not supported for the property type (e.g. `filter[price][like]=foo`) |
+| `INVALID_JSON` | `400` | Request body (POST / PUT / PATCH) contains invalid JSON, or `filter[...][in]` value is not a valid JSON array |
+| `CONFLICT` | `409` | Database unique / primary-key constraint violation |
+| `DB_UPDATE_ERROR` | `422` | Database update failed for another reason (FK violation, check constraint, etc.) |
+| `KEYLESS_ENTITY` | `405` | POST / PUT / PATCH / DELETE attempted on a keyless entity |
 
 ---
 
@@ -1343,7 +1351,7 @@ Authorization: Bearer <token>
 | Limitation | Details |
 |---|---|
 | **Single `[Key]`** | Composite primary keys are not supported. |
-| **`MaxPageSize` default** | `MaxPageSize` defaults to `0` (no limit). Set it explicitly when exposing large tables to the public internet. |
+| **`MaxPageSize` default** | `MaxPageSize` defaults to `1000`. Set to `0` to disable the limit (use with caution on large tables). |
 | **EF Core `DbSet`** | The entity must be registered as `DbSet<T>` in the provided `DbContext`. If it is not, an `InvalidOperationException` is thrown at startup. |
 | **Filterable property types** | Supported: primitives, `string`, `Guid`, `DateTime`, `DateTimeOffset`, `enum`, and nullable variants. Objects and collections cannot be used as filter fields. |
 | **`include` depth** | Only navigation properties declared directly on the entity are loaded. Nested includes (deeper than one level) are not supported. Unknown property names in `include` are silently ignored. |
