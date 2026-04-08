@@ -81,7 +81,9 @@ public class OtterApiRequestProcessor(
 
         if (apiEntity != null && string.IsNullOrWhiteSpace(result.Id) && request.Query?.Keys.Count > 0)
         {
-            var expressionBuilder = new OtterApiExpressionBuilder(request.Query, apiEntity);
+            // Pass DeserializationOptions so that in/nin correctly handles enum string names
+            // via OtterApiCaseInsensitiveEnumConverterFactory (same converter used for POST/PUT bodies).
+            var expressionBuilder = new OtterApiExpressionBuilder(request.Query, apiEntity, registry.DeserializationOptions);
 
             result.FilterApply = expressionBuilder.BuildFilterResult();
             result.SortApply   = expressionBuilder.BuildSortResult();

@@ -115,9 +115,12 @@ public class OtterApiRestController(
         if (!IsValid(entity))
             return new BadRequestObjectResult(actionContext.ModelState);
 
-        dbContext.Add(entity);
+        // Run BeforeSave hooks while the entity is still detached — hooks see a clean ChangeTracker.
+        // Add() is called only after all pre-save handlers succeed, so a hook that throws
+        // (e.g. DUPLICATE_NAME check) never leaves a ghost entry in the tracker.
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, entity, null, OtterApiCrudOperation.Post);
+        dbContext.Add(entity);
         await dbContext.SaveChangesAsync(ct);
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, entity, null, OtterApiCrudOperation.Post);
@@ -191,6 +194,10 @@ public class OtterApiRestController(
                 .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
 
             if (prop == null) continue;
+
+            // Never allow overwriting the primary key via PATCH — changing a PK would cause
+            // EF Core to throw or silently corrupt the identity of the row.
+            if (prop == otterApiRouteInfo.Entity.Id) continue;
 
             if (node is null)
             {

@@ -9,7 +9,11 @@ using OtterApi.Models;
 
 namespace OtterApi.Expressions;
 
-public class OtterApiFilterOperatorExpression(PropertyInfo property, string value, string comparisonOperator)
+public class OtterApiFilterOperatorExpression(
+    PropertyInfo property,
+    string value,
+    string comparisonOperator,
+    JsonSerializerOptions? jsonOptions = null)
     : IOtterApiExpression<OtterApiFilterResult>
 {
     // string.Contains(string) — universally translated by all EF Core providers.
@@ -37,7 +41,9 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
         if (new[] { "in", "nin" }.Contains(comparisonOperator, StringComparer.OrdinalIgnoreCase))
         {
             var listType  = typeof(List<>).MakeGenericType(property.PropertyType);
-            var list      = JsonSerializer.Deserialize(value, listType)!;
+            // Use the provided options (which include OtterApiCaseInsensitiveEnumConverterFactory)
+            // so that enum string names are accepted: ["Pending","Active"] as well as integers [0,1].
+            var list      = JsonSerializer.Deserialize(value, listType, jsonOptions)!;
             var listConst = Expression.Constant(list, listType);
             var containsM = listType.GetMethod("Contains", [property.PropertyType])!;
             var call      = Expression.Call(listConst, containsM, propExpr);

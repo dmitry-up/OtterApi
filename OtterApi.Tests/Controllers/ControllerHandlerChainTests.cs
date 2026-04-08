@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using OtterApi.Controllers;
@@ -181,6 +182,30 @@ public class ControllerHandlerChainAndScopedFilterTests : IDisposable
         var result = await ctrl.PostAsync(PostRoute(entity), item);
 
         Assert.IsType<CreatedResult>(result);
+    }
+
+    [Fact]
+    public async Task PostAsync_BeforeSave_EntityIsDetached_BeforeAdd()
+    {
+        // Regression: dbContext.Add() must be called AFTER BeforeSave hooks complete,
+        // so the entity state is Detached (not Added) during hook execution.
+        EntityState? capturedState = null;
+
+        var opts   = new OtterApi.Configs.OtterApiOptions { Path = "/api" };
+        var entity = opts.Entity<TestItem>("/items")
+            .BeforeSave((ctx, item, _, _) =>
+            {
+                capturedState = ctx.Entry(item).State;
+            })
+            .Build(typeof(TestDbContext), opts);
+
+        var ctrl = BuildController(entity);
+        var item = new TestItem { Id = 99, Name = "StateCheck", IsActive = true, TenantId = 1 };
+
+        await ctrl.PostAsync(PostRoute(entity), item);
+
+        // Entity must have been Detached during BeforeSave — not yet Added to tracker
+        Assert.Equal(EntityState.Detached, capturedState);
     }
 
     [Fact]

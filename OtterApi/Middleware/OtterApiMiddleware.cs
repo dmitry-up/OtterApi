@@ -18,7 +18,27 @@ public class OtterApiMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, IOtterApiRequestProcessor otterApiRequestProcessor,
         IAuthorizationService authorizationService)
     {
-        var routeInfo = otterApiRequestProcessor.GetRouteInfo(context.Request);
+        // GetRouteInfo builds filter/sort Expression trees from query-string parameters.
+        // If a filter value contains invalid JSON (e.g. filter[field][in]=notJson) a JsonException
+        // is thrown here — before the inner try/catch that guards controller calls.
+        // Catch it early so we return a structured 400 instead of propagating unhandled.
+        OtterApiRouteInfo routeInfo;
+        try
+        {
+            routeInfo = otterApiRequestProcessor.GetRouteInfo(context.Request);
+        }
+        catch (JsonException)
+        {
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                code    = "INVALID_JSON",
+                message = "A query parameter contains invalid JSON (e.g. filter[field][in] must be a valid JSON array)."
+            }));
+            return;
+        }
+
         var result = new ObjectResult(null);
 
         if (routeInfo.Entity != null)

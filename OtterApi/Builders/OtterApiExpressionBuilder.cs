@@ -1,5 +1,6 @@
 ﻿using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using OtterApi.Expressions;
 using OtterApi.Helpers;
@@ -7,7 +8,10 @@ using OtterApi.Models;
 
 namespace OtterApi.Builders;
 
-public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEntity otterApiEntity)
+public class OtterApiExpressionBuilder(
+    IQueryCollection queryString,
+    OtterApiEntity otterApiEntity,
+    JsonSerializerOptions? jsonOptions = null)
 {
     private const string Pagingprefix   = "page";
     private const string Filterprefix   = "filter";
@@ -72,7 +76,7 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
             if (opParts.Count == 0)
                 filterResult = new OtterApiFilterOtterApiExpression(property, queryString[key]!).Build();
             else if (opParts.Count == 1)
-                filterResult = new OtterApiFilterOperatorExpression(property, queryString[key]!, opParts[0]).Build();
+                filterResult = new OtterApiFilterOperatorExpression(property, queryString[key]!, opParts[0], jsonOptions).Build();
             else
                 continue;
 

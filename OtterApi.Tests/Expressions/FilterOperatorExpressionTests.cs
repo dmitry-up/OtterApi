@@ -166,6 +166,86 @@ public class FilterOperatorExpressionTests
         Assert.Equal("c", matched[0].Name);
     }
 
+    // ── in / nin with enum properties ────────────────────────────────────────
+
+    private static System.Text.Json.JsonSerializerOptions EnumOptions()
+    {
+        var opts = new System.Text.Json.JsonSerializerOptions();
+        opts.Converters.Add(new OtterApi.Converters.OtterApiCaseInsensitiveEnumConverterFactory());
+        return opts;
+    }
+
+    [Fact]
+    public void Build_In_OnEnum_AcceptsStringNames()
+    {
+        // filter[status][in]=["Active","Pending"] — string enum names must work
+        var prop    = Prop<Stub>("Status");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[\"Active\",\"Pending\"]", "in", EnumOptions()).Build();
+        var data    = new[]
+        {
+            new Stub { Status = StubStatus.Active },
+            new Stub { Status = StubStatus.Deleted },
+            new Stub { Status = StubStatus.Pending }
+        };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, s => Assert.NotEqual(StubStatus.Deleted, s.Status));
+    }
+
+    [Fact]
+    public void Build_In_OnEnum_AcceptsStringNames_CaseInsensitive()
+    {
+        // filter[status][in]=["active","PENDING"] — case-insensitive
+        var prop    = Prop<Stub>("Status");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[\"active\",\"PENDING\"]", "in", EnumOptions()).Build();
+        var data    = new[]
+        {
+            new Stub { Status = StubStatus.Active },
+            new Stub { Status = StubStatus.Deleted },
+            new Stub { Status = StubStatus.Pending }
+        };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
+    }
+
+    [Fact]
+    public void Build_In_OnEnum_AcceptsIntegerValues()
+    {
+        // filter[status][in]=[0,1] — integer enum values must still work
+        var prop    = Prop<Stub>("Status");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[0,1]", "in", EnumOptions()).Build();
+        var data    = new[]
+        {
+            new Stub { Status = StubStatus.Pending  },   // 0
+            new Stub { Status = StubStatus.Active   },   // 1
+            new Stub { Status = StubStatus.Deleted  }    // 2
+        };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, s => Assert.NotEqual(StubStatus.Deleted, s.Status));
+    }
+
+    [Fact]
+    public void Build_Nin_OnEnum_AcceptsStringNames()
+    {
+        // filter[status][nin]=["Deleted"] — exclude by string enum name
+        var prop    = Prop<Stub>("Status");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[\"Deleted\"]", "nin", EnumOptions()).Build();
+        var data    = new[]
+        {
+            new Stub { Status = StubStatus.Active },
+            new Stub { Status = StubStatus.Deleted },
+            new Stub { Status = StubStatus.Pending }
+        };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, s => Assert.NotEqual(StubStatus.Deleted, s.Status));
+    }
+
     // ── Operator is case-insensitive ──────────────────────────────────────────
 
     [Theory]
@@ -275,11 +355,14 @@ public class FilterOperatorExpressionTests
 
     // ── Stub ─────────────────────────────────────────────────────────────────
 
+    private enum StubStatus { Pending = 0, Active = 1, Deleted = 2 }
+
     private class Stub
     {
-        public string  Name        { get; set; } = string.Empty;
-        public int     Age         { get; set; }
-        public Guid    Token       { get; set; }
-        public int?    NullableAge { get; set; }
+        public string     Name        { get; set; } = string.Empty;
+        public int        Age         { get; set; }
+        public Guid       Token       { get; set; }
+        public int?       NullableAge { get; set; }
+        public StubStatus Status      { get; set; }
     }
 }

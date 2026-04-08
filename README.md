@@ -57,7 +57,6 @@ dotnet add package OtterApi
 | Package | Version |
 |---|---|
 | Microsoft.EntityFrameworkCore | 8.0.0 |
-| System.Linq.Dynamic.Core | 1.7.2 |
 | Swashbuckle.AspNetCore.SwaggerGen | 6.3.1 |
 
 ---
@@ -597,7 +596,7 @@ DELETE /api/products/4
 ```
 
 **Responses:**
-- `200 OK`
+- `204 No Content`
 - `400 Bad Request` — Id missing from URL
 - `404 Not Found`
 
@@ -607,7 +606,7 @@ DELETE /api/products/4
 
 Partially updates an existing record using **RFC 7396 JSON Merge Patch** semantics.  
 Only the fields present in the request body are updated. Omitted fields are left unchanged.  
-Navigation properties and unknown fields are silently ignored.
+Navigation properties, unknown fields, and the **primary key field** are silently ignored.
 
 ```http
 PATCH /api/products/4
@@ -704,6 +703,9 @@ GET /api/products?filter[name][like]=book
 GET /api/products?filter[categoryId][in]=[1,2,5]
 GET /api/products?filter[status][nin]=["pending","discontinued"]
 ```
+
+> **Note.** For `in` / `nin` on enum properties both integer values (`[0,1]`) and case-insensitive
+> string names (`["Pending","Active"]`) are accepted, consistent with the scalar `eq` / `neq` operators.
 
 ### Sorting
 
