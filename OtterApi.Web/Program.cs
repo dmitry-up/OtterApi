@@ -16,29 +16,42 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
     options.Path = "/api";
 
     // Only expose active categories — archived ones are invisible to consumers.
-    // GET /api/categories        → returns only IsActive == true
-    // GET /api/categories/{id}   → 404 when the category is archived
+    // Custom routes:
+    //   GET /api/categories/recent — last 3 categories by creation date
     options.Entity<Category>("categories")
         .ExposePagedResult()
-        .WithQueryFilter(c => c.IsActive);
+        .WithQueryFilter(c => c.IsActive)
+        .WithCustomRoute("recent",
+            sort: "CreatedAt desc",
+            take: 3);
 
-    // Only expose products that are currently available.
-    // The "Discontinued Gadget" (Id=10, IsAvailable=false) is hidden from all GET endpoints.
-    // Two chained filters demonstrate AND semantics:
-    //   filter 1 — must be available
-    //   filter 2 — must have stock > 0  (belt-and-suspenders: IsAvailable is already set to false when Stock hits 0)
+    // Only expose products that are currently available and in stock.
+    // Custom routes:
+    //   GET /api/products/featured — top-5 most expensive available products
+    //   GET /api/products/cheap    — up to 10 cheapest products, price < 50
     options.Entity<Product>("products")
         .ExposePagedResult()
         .WithQueryFilter(p => p.IsAvailable)
-        .WithQueryFilter(p => p.Stock > 0);
+        .WithQueryFilter(p => p.Stock > 0)
+        .WithCustomRoute("featured",
+            sort: "Price desc",
+            take: 5)
+        .WithCustomRoute("cheap",
+            filter: p => p.Price < 50m,
+            sort:   "Price asc",
+            take:   10);
 
-    // Hide cancelled orders from the public listing.
-    // Single filter with a compound condition: not cancelled AND not pending.
-    // Only active, confirmed, shipped, or delivered orders are visible.
+    // Hide cancelled and pending orders from the public listing.
+    // Custom routes:
+    //   GET /api/orders/latest — the most recently confirmed/shipped/delivered order
     options.Entity<Order>("orders")
         .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post)
         .ExposePagedResult()
         .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
+        .WithCustomRoute("latest",
+            sort:   "CreatedAt desc",
+            take:   1,
+            single: true)
         .BeforeSave(new OrderBeforeSaveHandler())
         .AfterSave(new OrderAfterSaveHandler());
 });

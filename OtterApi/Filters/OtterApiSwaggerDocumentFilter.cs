@@ -448,6 +448,75 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                         }
                     });
                 }
+
+                // ── Custom named routes ────────────────────────────────────────────
+                foreach (var cr in entity.CustomRoutes)
+                {
+                    var descParts = new List<string>
+                    {
+                        $"Custom preset GET route for {entity.EntityType.Name}."
+                    };
+                    if (!string.IsNullOrWhiteSpace(cr.Sort))
+                        descParts.Add($"Default sort: {cr.Sort}.");
+                    if (cr.Take > 0)
+                        descParts.Add($"Limited to {cr.Take} record(s).");
+                    if (cr.Single)
+                        descParts.Add("Returns a single object or 404 when no match is found.");
+                    else
+                        descParts.Add("Returns an array (may be empty).");
+
+                    // Response schema: object when single=true, array otherwise
+                    var responseSchema = cr.Single
+                        ? new OpenApiSchema
+                        {
+                            Reference = new OpenApiReference
+                            {
+                                Type = ReferenceType.Schema,
+                                Id   = entity.EntityType.Name.ToLower()
+                            }
+                        }
+                        : new OpenApiSchema
+                        {
+                            Type  = "array",
+                            Items = new OpenApiSchema
+                            {
+                                Reference = new OpenApiReference
+                                {
+                                    Type = ReferenceType.Schema,
+                                    Id   = entity.EntityType.Name.ToLower()
+                                }
+                            }
+                        };
+
+                    var responses = new OpenApiResponses
+                    {
+                        ["200"] = new OpenApiResponse
+                        {
+                            Description = "Success",
+                            Content =
+                            {
+                                ["application/json"] = new OpenApiMediaType { Schema = responseSchema }
+                            }
+                        }
+                    };
+
+                    if (cr.Single)
+                        responses["404"] = new OpenApiResponse { Description = "No matching record found" };
+
+                    swaggerDoc.Paths.Add($"{entity.Route.ToLower()}/{cr.Slug}", new OpenApiPathItem
+                    {
+                        Operations =
+                        {
+                            [OperationType.Get] = new OpenApiOperation
+                            {
+                                OperationId = GetOperationId($"{entity.Route.ToLower()}/{cr.Slug}"),
+                                Tags        = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
+                                Description = string.Join(" ", descParts),
+                                Responses   = responses
+                            }
+                        }
+                    });
+                }
             }
         }
 

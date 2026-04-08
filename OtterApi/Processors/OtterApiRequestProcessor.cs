@@ -83,7 +83,16 @@ public class OtterApiRequestProcessor(
 
                 default:
                     if (!string.IsNullOrEmpty(value))
-                        result.Id = value;
+                    {
+                        // Check named custom routes before falling back to treating the segment as an Id
+                        var customRoute = apiEntity.CustomRoutes
+                            .FirstOrDefault(r => r.Slug.Equals(value, StringComparison.OrdinalIgnoreCase));
+
+                        if (customRoute != null)
+                            result.CustomRoute = customRoute;
+                        else
+                            result.Id = value;
+                    }
                     break;
             }
         }

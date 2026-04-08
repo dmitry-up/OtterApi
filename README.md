@@ -20,6 +20,7 @@
   - [JsonSerializerOptions](#jsonserializeroptions)
 - [Entity Registration](#entity-registration)
 - [Server-Side Query Filters](#server-side-query-filters)
+- [Custom Named Routes](#custom-named-routes)
 - [Authorization](#authorization)
 - [REST API — Endpoint Reference](#rest-api--endpoint-reference)
 - [Query Parameters](#query-parameters)
@@ -155,6 +156,7 @@ options.Entity<TEntity>(route)
     .Allow(OtterApiCrudOperation operations)
     .ExposePagedResult(bool expose = true)
     .WithQueryFilter(Expression<Func<T, bool>> predicate)  // server-side row filter
+    .WithCustomRoute("slug", ...)   // named preset GET route (see below)
     .BeforeSave(...)
     .AfterSave(...);
 ```
@@ -245,6 +247,99 @@ GET /api/products?filter[categoryId]=1
 - The predicate is compiled **once at startup** — it cannot reference request-scoped data such as the current user Id or a value from the HTTP headers. For dynamic, per-request filtering use a `BeforeSave` hook or a custom middleware.
 
 ---
+
+## Custom Named Routes
+
+`.WithCustomRoute(slug, ...)` registers a named, pre-configured `GET` endpoint on an entity. The route is exposed at `{entityRoute}/{slug}` and returns a pre-filtered, pre-sorted subset of the entity's data — without writing any controller code.
+
+### Method Signature
+
+```csharp
+.WithCustomRoute(
+    string slug,                               // URL segment, e.g. "last", "featured"
+    Expression<Func<T, bool>>? filter = null,  // optional row predicate
+    string? sort   = null,                     // optional Dynamic LINQ sort expression
+    int     take   = 0,                        // max rows to return (0 = no built-in limit)
+    bool    single = false)                    // true = return T|404, false = return T[]
+```
+
+All parameters except `slug` are optional and can be combined freely.
+
+### Examples
+
+```csharp
+// GET /api/orders/latest — the single most recent non-cancelled order (or 404)
+options.Entity<Order>("orders")
+    .WithQueryFilter(o => o.Status != OrderStatus.Cancelled)
+    .WithCustomRoute("latest",
+        sort:   "CreatedAt desc",
+        take:   1,
+        single: true);
+
+// GET /api/products/featured — top-5 in-stock products by price descending
+options.Entity<Product>("products")
+    .WithCustomRoute("featured",
+        filter: p => p.Stock > 0,
+        sort:   "Price desc",
+        take:   5);
+
+// GET /api/products/cheap — up to 10 items under 50 currency units
+options.Entity<Product>("products")
+    .WithCustomRoute("cheap",
+        filter: p => p.Price < 50m,
+        sort:   "Price asc",
+        take:   10);
+
+// Multiple custom routes on the same entity
+options.Entity<Product>("products")
+    .WithQueryFilter(p => p.IsActive)           // entity-level: hides inactive items globally
+    .WithCustomRoute("featured",
+        filter: p => p.Stock > 0,
+        sort:   "Price desc",
+        take:   5)
+    .WithCustomRoute("recent",
+        sort: "CreatedAt desc",
+        take: 10);
+```
+
+### Request / Response
+
+Custom routes accept the same query parameters as a regular `GET` collection request. Client-supplied parameters stack on top of the route's built-in configuration:
+
+```http
+GET /api/products/featured
+GET /api/products/featured?filter[categoryId]=1   # client filter stacks (AND semantics)
+GET /api/products/featured?sort[name]=asc          # client sort overrides route sort
+```
+
+| `single` value | Response on match | Response when empty |
+|---|---|---|
+| `false` (default) | `200 OK` — JSON **array** | `200 OK` — empty array `[]` |
+| `true` | `200 OK` — JSON **object** | `404 Not Found` |
+
+### Pipeline (order of operations)
+
+| Step | What happens |
+|---|---|
+| 1 | Entity-level `QueryFilters` applied (access control / soft-delete) |
+| 2 | Custom route's own `filter` predicate applied |
+| 3 | `?include=` navigation properties eagerly loaded |
+| 4 | Client-supplied `?filter[...]` applied (AND semantics) |
+| 5 | Sort: `?sort[...]` → route `sort` → default `Id desc` |
+| 6 | `single: true` → return first item or 404 |
+| 7 | `take` limit applied (client `?pagesize=` overrides route `take`) |
+
+### Constraints
+
+- **Unique slugs per entity.** Registering two routes with the same slug on the same entity throws `InvalidOperationException` at startup.
+- **Reserved slugs are forbidden.** The slugs `count` and `pagedresult` conflict with built-in OtterApi paths — using them throws at startup.
+- **EF-translatable predicates only.** The same rule as `WithQueryFilter` — the predicate must be expressible in SQL.
+- **Static at startup.** Predicates are compiled once and cannot reference request-scoped data (current user, HTTP headers, etc.).
+- **GET only.** Custom routes are read-only. POST, PUT, PATCH, and DELETE on a custom route path are not handled — the request falls through to the next middleware.
+
+---
+
+## Authorization
 
 OtterApi uses the standard ASP.NET Core `IAuthorizationService`, so all policies are configured the usual way.
 
@@ -1097,4 +1192,7 @@ Authorization: Bearer <token>
 | **Middleware order** | `UseOtterApi()` must be placed **after** `UseAuthentication()` / `UseAuthorization()` and **before** `UseEndpoints()` / `MapControllers()`. |
 | **`WithQueryFilter` — EF-translatable only** | Predicates passed to `.WithQueryFilter()` must be expressible in SQL (field comparisons, `&&`, `\|\|`, constants). Arbitrary C# logic that cannot be converted to a query will throw at runtime. |
 | **`WithQueryFilter` — static only** | Predicates are compiled once at application startup. They cannot reference request-scoped data (current user, HTTP headers, etc.). For dynamic per-request filtering, use a `BeforeSave` hook or a custom middleware instead. |
+| **`WithCustomRoute` — reserved slugs** | The slugs `count` and `pagedresult` are reserved and throw `InvalidOperationException` at startup if used. |
+| **`WithCustomRoute` — unique slugs** | Each slug must be unique per entity. Duplicate slugs throw `InvalidOperationException` at startup. |
+| **`WithCustomRoute` — GET only** | Custom routes are read-only GET endpoints. POST, PUT, PATCH, and DELETE are not supported on custom route paths. |
 | **Target framework** | .NET 8.0 is required. |

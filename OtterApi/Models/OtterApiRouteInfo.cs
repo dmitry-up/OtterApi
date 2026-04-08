@@ -13,4 +13,10 @@ public class OtterApiRouteInfo
     public bool IsCount { get; set; }
     public bool IsPageResult { get; set; }
     public List<string> IncludeExpression { get; set; } = [];
+
+    /// <summary>
+    /// Set when the request path matches a named custom route slug
+    /// registered via <c>.WithCustomRoute(...)</c>.
+    /// </summary>
+    public OtterApiCustomRoute? CustomRoute { get; set; }
 }

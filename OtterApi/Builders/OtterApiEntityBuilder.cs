@@ -23,6 +23,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private string? putPolicy;
     private OtterApiCrudOperation allowedOperations = OtterApiCrudOperation.All;
     private readonly List<Func<IQueryable, IQueryable>> queryFilters = [];
+    private readonly List<OtterApiCustomRoute> customRoutes = [];
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -128,6 +129,37 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     public OtterApiEntityBuilder<T> AfterSave(IOtterApiAfterSaveHandler<T> handler)
         => AfterSave(handler.AfterSaveAsync);
 
+    /// <summary>
+    /// Registers a named custom GET route exposed at <c>{entityRoute}/{slug}</c>.
+    /// The route applies its own filter (stacked on top of entity-level QueryFilters),
+    /// an optional sort, and an optional Take limit.
+    /// When <paramref name="single"/> is <c>true</c> the endpoint returns a single
+    /// object (or 404); otherwise it returns an array.
+    /// Multiple calls register independent routes — slugs must be unique and must not
+    /// conflict with reserved paths (<c>count</c>, <c>pagedresult</c>).
+    /// </summary>
+    public OtterApiEntityBuilder<T> WithCustomRoute(
+        string slug,
+        Expression<Func<T, bool>>? filter = null,
+        string? sort = null,
+        int take = 0,
+        bool single = false)
+    {
+        var cr = new OtterApiCustomRoute
+        {
+            Slug   = slug.Trim('/').ToLowerInvariant(),
+            Sort   = sort,
+            Take   = take,
+            Single = single
+        };
+
+        if (filter != null)
+            cr.Filters.Add(q => ((IQueryable<T>)q).Where(filter));
+
+        customRoutes.Add(cr);
+        return this;
+    }
+
     public OtterApiEntity Build(Type dbContextType, OtterApiOptions options)
     {
         var dbSetProperty = dbContextType.GetProperties()
@@ -141,6 +173,26 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
         var entityType = typeof(T);
         var route = new PathString(options.Path)
             .Add(this.route.StartsWith("/") ? this.route : $"/{this.route}");
+
+        // ── Validate custom route slugs ────────────────────────────────────────
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "count", "pagedresult" };
+        foreach (var cr in customRoutes)
+        {
+            if (reserved.Contains(cr.Slug))
+                throw new InvalidOperationException(
+                    $"Custom route slug '{cr.Slug}' on entity '{entityType.Name}' conflicts with " +
+                    $"a reserved OtterApi path. Reserved slugs: {string.Join(", ", reserved)}.");
+        }
+
+        var duplicateSlugs = customRoutes
+            .GroupBy(r => r.Slug, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        if (duplicateSlugs.Count > 0)
+            throw new InvalidOperationException(
+                $"Duplicate custom route slugs on entity '{entityType.Name}': " +
+                $"{string.Join(", ", duplicateSlugs)}.");
 
         return new OtterApiEntity
         {
@@ -157,6 +209,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             ExposePagedResult = exposePagedResult,
             AllowedOperations = allowedOperations,
             QueryFilters = queryFilters,
+            CustomRoutes = customRoutes,
             Properties = entityType.GetProperties()
                 .Where(x => x.PropertyType.IsTypeSupported()).ToList(),
             NavigationProperties = entityType.GetProperties()

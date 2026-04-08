@@ -25,6 +25,10 @@ public class OtterApiRestController(
 
     public async Task<ObjectResult> GetAsync(OtterApiRouteInfo otterApiRouteInfo)
     {
+        // ── Named custom route (e.g. GET /api/products/featured) ──────────────
+        if (otterApiRouteInfo.CustomRoute != null)
+            return await GetCustomRouteAsync(otterApiRouteInfo);
+
         if (otterApiRouteInfo.Id != null)
         {
             if (otterApiRouteInfo.Entity.Id == null)
@@ -251,8 +255,64 @@ public class OtterApiRestController(
             .FirstOrDefault();
     }
 
-    private async Task<OtterApiPagedResult> GetPagedResultAsync(IQueryable dbSet, int page, int pageSize)
+    /// <summary>
+    /// Handles a named custom GET route registered via <c>.WithCustomRoute(...)</c>.
+    /// Pipeline:
+    /// 1. Entity-level QueryFilters (access control / soft-delete)
+    /// 2. Custom route's own Filters (preset scope)
+    /// 3. Eagerly loaded navigation properties (from ?include=)
+    /// 4. Client-supplied ?filter[...] (further narrowing — AND semantics)
+    /// 5. Sort: client ?sort[...] → custom route Sort → default Id desc
+    /// 6. Pagination / Take: client skip/take → custom route Take
+    /// 7. Single mode: returns first item or 404
+    /// </summary>
+    private async Task<ObjectResult> GetCustomRouteAsync(OtterApiRouteInfo routeInfo)
     {
+        var cr     = routeInfo.CustomRoute!;
+        var dbSet  = (IQueryable)routeInfo.Entity.DbSet.GetValue(dbContext)!;
+
+        // 1. Entity-level query filters
+        dbSet = ApplyQueryFilters(dbSet, routeInfo.Entity);
+
+        // 2. Custom route's own filters
+        foreach (var filter in cr.Filters)
+            dbSet = filter(dbSet);
+
+        // 3. Navigation property eager loading
+        foreach (var include in routeInfo.IncludeExpression)
+            dbSet = (dynamic)EntityFrameworkQueryableExtensions.Include((dynamic)dbSet, include);
+
+        // 4. Client-supplied filter
+        if (!string.IsNullOrWhiteSpace(routeInfo.FilterExpression))
+            dbSet = dbSet.Where(routeInfo.FilterExpression, routeInfo.FilterValues);
+
+        // 5. Sort: client sort takes priority over custom route sort
+        var sortExpr = !string.IsNullOrWhiteSpace(routeInfo.SortExpression)
+            ? routeInfo.SortExpression
+            : cr.Sort;
+
+        dbSet = !string.IsNullOrWhiteSpace(sortExpr)
+            ? dbSet.OrderBy(sortExpr)
+            : ApplyDefaultSort(dbSet, routeInfo);
+
+        // 6a. Single mode — return first item (Take(1) for efficiency) or 404
+        if (cr.Single)
+        {
+            var item = (await dbSet.Take(1).ToDynamicListAsync()).FirstOrDefault();
+            return item != null ? GetOkObjectResult(item) : new NotFoundObjectResult(null);
+        }
+
+        // 6b. Apply take/skip: client-specified take overrides custom route take
+        var take = routeInfo.Take != 0 ? routeInfo.Take : cr.Take;
+        if (take > 0)
+            dbSet = dbSet.Skip(routeInfo.Skip).Take(take);
+        else if (routeInfo.Skip > 0)
+            dbSet = dbSet.Skip(routeInfo.Skip);
+
+        return GetOkObjectResult(await dbSet.ToDynamicListAsync());
+    }
+
+    private async Task<OtterApiPagedResult> GetPagedResultAsync(IQueryable dbSet, int page, int pageSize)    {
         var total = await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet);
         var pagedSet = dbSet
             .Skip((page - 1) * pageSize)

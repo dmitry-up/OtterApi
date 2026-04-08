@@ -43,6 +43,12 @@ public class OtterApiEntity
     /// </summary>
     public List<Func<IQueryable, IQueryable>> QueryFilters { get; set; } = [];
 
+    /// <summary>
+    /// Named custom GET routes registered via <c>.WithCustomRoute(...)</c>.
+    /// Each route is a pre-configured preset exposed at <c>{entityRoute}/{slug}</c>.
+    /// </summary>
+    public List<OtterApiCustomRoute> CustomRoutes { get; set; } = [];
+
     /// <summary>newEntity = incoming data, originalEntity = current DB state (null for POST)</summary>
     public Func<DbContext, object, object?, OtterApiCrudOperation, Task>? PreSaveHandler { get; set; }
 
