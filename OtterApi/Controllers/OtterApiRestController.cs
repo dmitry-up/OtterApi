@@ -30,74 +30,47 @@ public class OtterApiRestController(
 
             var result = await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
                 OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
-            if (result != null)
-            {
-                return GetOkObjectResult(result);
-            }
 
-            return new NotFoundObjectResult(null);
+            return result != null ? GetOkObjectResult(result) : new NotFoundObjectResult(null);
         }
 
-        if (otterApiRouteInfo.HasModifiers)
+        var dbSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+
+        foreach (var include in otterApiRouteInfo.IncludeExpression)
         {
-            var dbSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext);
-
-            foreach (var include in otterApiRouteInfo.IncludeExpression)
-            {
-                dbSet = (dynamic)EntityFrameworkQueryableExtensions.Include((dynamic)dbSet, include);
-            }
-
-            if (!string.IsNullOrWhiteSpace(otterApiRouteInfo.FilterExpression))
-            {
-                dbSet = dbSet.Where(otterApiRouteInfo.FilterExpression, otterApiRouteInfo.FilterValues);
-            }
-
-            if (!string.IsNullOrWhiteSpace(otterApiRouteInfo.SortExpression))
-            {
-                dbSet = dbSet.OrderBy(otterApiRouteInfo.SortExpression);
-            }
-            else
-            {
-                dbSet = ApplyDefaultSort(dbSet, otterApiRouteInfo);
-            }
-
-            if (otterApiRouteInfo.Take != 0)
-            {
-                dbSet = dbSet.Skip(otterApiRouteInfo.Skip).Take(otterApiRouteInfo.Take);
-            }
-
-            if (otterApiRouteInfo.IsCount)
-            {
-                return GetOkObjectResult(await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet));
-            }
-
-            if (otterApiRouteInfo.IsPageResult)
-            {
-                var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
-                return GetOkObjectResult(await GetPagedResultAsync(dbSet,
-                    (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext),
-                    otterApiRouteInfo.Page, pageSize));
-            }
-
-            return GetOkObjectResult(await dbSet.ToDynamicListAsync());
+            dbSet = (dynamic)EntityFrameworkQueryableExtensions.Include((dynamic)dbSet, include);
         }
+
+        if (!string.IsNullOrWhiteSpace(otterApiRouteInfo.FilterExpression))
+        {
+            dbSet = dbSet.Where(otterApiRouteInfo.FilterExpression, otterApiRouteInfo.FilterValues);
+        }
+
+        dbSet = !string.IsNullOrWhiteSpace(otterApiRouteInfo.SortExpression)
+            ? dbSet.OrderBy(otterApiRouteInfo.SortExpression)
+            : ApplyDefaultSort(dbSet, otterApiRouteInfo);
 
         if (otterApiRouteInfo.IsCount)
         {
-            return GetOkObjectResult(await EntityFrameworkQueryableExtensions.CountAsync(
-                (dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)));
+            return GetOkObjectResult(await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet));
         }
 
         if (otterApiRouteInfo.IsPageResult)
         {
             var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
-            var fullSet = ApplyDefaultSort(
-                (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext), otterApiRouteInfo);
-            return GetOkObjectResult(await GetPagedResultAsync(fullSet, fullSet, 1, pageSize));
+            var page = otterApiRouteInfo.Page < 1 ? 1 : otterApiRouteInfo.Page;
+            
+            return GetOkObjectResult(await GetPagedResultAsync(dbSet, page, pageSize));
         }
 
-        return GetOkObjectResult(await ApplyDefaultSort(
-            (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext), otterApiRouteInfo).ToDynamicListAsync());
+        if (otterApiRouteInfo.Take != 0)
+        {
+            dbSet = dbSet
+                .Skip(otterApiRouteInfo.Skip)
+                .Take(otterApiRouteInfo.Take);
+        }
+
+        return GetOkObjectResult(await dbSet.ToDynamicListAsync());
     }
 
     public async Task<ObjectResult> PostAsync(OtterApiRouteInfo otterApiRouteInfo, object entity)
@@ -197,16 +170,19 @@ public class OtterApiRestController(
             .FirstOrDefault();
     }
 
-    private async Task<OtterApiPagedResult> GetPagedResultAsync(IQueryable dbSet, IQueryable totalDbSet, int page, int pageSize)
+    private async Task<OtterApiPagedResult> GetPagedResultAsync(IQueryable dbSet, int page, int pageSize)
     {
-        var total = await EntityFrameworkQueryableExtensions.CountAsync((dynamic)totalDbSet);
+        var total = await EntityFrameworkQueryableExtensions.CountAsync((dynamic)dbSet);
+        var pagedSet = dbSet
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize);
 
         return new OtterApiPagedResult
         {
-            Items = await dbSet.ToDynamicListAsync(),
+            Items = await pagedSet.ToDynamicListAsync(),
             Page = page,
-            PageSize = pageSize == 0 ? total : pageSize,
-            PageCount = pageSize == 0 ? 1 : (int)Math.Ceiling(total / (decimal)pageSize),
+            PageSize = pageSize,
+            PageCount = (int)Math.Ceiling(total / (decimal)pageSize),
             Total = total
         };
     }
