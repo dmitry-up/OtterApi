@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using OtterApi.Configs;
 using OtterApi.Converters;
+using OtterApi.Exceptions;
 using OtterApi.Interfaces;
 using OtterApi.Models;
 
@@ -17,8 +18,10 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
     public OtterApiFilterResult Build()
     {
         if (!property.PropertyType.IsOperatorSuported(comparisonOperator))
-            throw new NotSupportedException(
-                $"Operator {comparisonOperator} is not suported for {property.PropertyType.Name}");
+            throw new OtterApiException(
+                "INVALID_FILTER_OPERATOR",
+                $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",
+                400);
 
         var entityType = property.ReflectedType ?? property.DeclaringType!;
         var type       = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
@@ -53,8 +56,10 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
             "gteq"  => Expression.GreaterThanOrEqual(propExpr, constExpr),
             "like"  => Expression.Call(propExpr, StringContains, constExpr),
             "nlike" => Expression.Not(Expression.Call(propExpr, StringContains, constExpr)),
-            _       => throw new NotSupportedException(
-                           $"Operator {comparisonOperator} is not suported for {property.PropertyType.Name}")
+            _       => throw new OtterApiException(
+                           "INVALID_FILTER_OPERATOR",
+                           $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",
+                           400)
         };
 
         return new OtterApiFilterResult { Predicate = Expression.Lambda(pred, param) };

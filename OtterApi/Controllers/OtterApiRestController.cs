@@ -40,11 +40,11 @@ public class OtterApiRestController(
         return opts;
     }
 
-    public async Task<ObjectResult> GetAsync(OtterApiRouteInfo otterApiRouteInfo)
+    public async Task<ObjectResult> GetAsync(OtterApiRouteInfo otterApiRouteInfo, CancellationToken ct = default)
     {
         // ── Named custom route (e.g. GET /api/products/featured) ──────────────
         if (otterApiRouteInfo.CustomRoute != null)
-            return await GetCustomRouteAsync(otterApiRouteInfo);
+            return await GetCustomRouteAsync(otterApiRouteInfo, ct);
 
         if (otterApiRouteInfo.Id != null)
         {
@@ -66,7 +66,7 @@ public class OtterApiRestController(
             filteredSet = ApplyQueryFilters(filteredSet, otterApiRouteInfo.Entity);
             filteredSet = ApplyScopedQueryFilters(filteredSet, otterApiRouteInfo.Entity);
             filteredSet = otterApiRouteInfo.Entity.WhereId(filteredSet, idValue);
-            var filteredResult = (await otterApiRouteInfo.Entity.ToListAsync(filteredSet, CancellationToken.None))
+            var filteredResult = (await otterApiRouteInfo.Entity.ToListAsync(filteredSet, ct))
                 .FirstOrDefault();
             return filteredResult != null ? GetOkObjectResult(filteredResult) : new NotFoundObjectResult(null);
         }
@@ -86,22 +86,22 @@ public class OtterApiRestController(
             : ApplyDefaultSort(dbSet, otterApiRouteInfo);
 
         if (otterApiRouteInfo.IsCount)
-            return GetOkObjectResult(await otterApiRouteInfo.Entity.CountAsync(dbSet, CancellationToken.None));
+            return GetOkObjectResult(await otterApiRouteInfo.Entity.CountAsync(dbSet, ct));
 
         if (otterApiRouteInfo.IsPageResult)
         {
             var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
             var page     = otterApiRouteInfo.Page < 1 ? 1 : otterApiRouteInfo.Page;
-            return GetOkObjectResult(await GetPagedResultAsync(otterApiRouteInfo.Entity, dbSet, page, pageSize));
+            return GetOkObjectResult(await GetPagedResultAsync(otterApiRouteInfo.Entity, dbSet, page, pageSize, ct));
         }
 
         if (otterApiRouteInfo.Take != 0)
             dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, otterApiRouteInfo.Skip), otterApiRouteInfo.Take);
 
-        return GetOkObjectResult(await otterApiRouteInfo.Entity.ToListAsync(dbSet, CancellationToken.None));
+        return GetOkObjectResult(await otterApiRouteInfo.Entity.ToListAsync(dbSet, ct));
     }
 
-    public async Task<ObjectResult> PostAsync(OtterApiRouteInfo otterApiRouteInfo, object entity)
+    public async Task<ObjectResult> PostAsync(OtterApiRouteInfo otterApiRouteInfo, object entity, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
@@ -112,7 +112,7 @@ public class OtterApiRestController(
         dbContext.Add(entity);
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, entity, null, OtterApiCrudOperation.Post);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(ct);
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, entity, null, OtterApiCrudOperation.Post);
 
@@ -120,7 +120,7 @@ public class OtterApiRestController(
         return new CreatedResult($"{otterApiRouteInfo.Entity.Route}/{newId}", entity);
     }
 
-    public async Task<ObjectResult> PutAsync(OtterApiRouteInfo otterApiRouteInfo, object entity)
+    public async Task<ObjectResult> PutAsync(OtterApiRouteInfo otterApiRouteInfo, object entity, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
@@ -137,21 +137,21 @@ public class OtterApiRestController(
         if (!IsValid(entity))
             return new BadRequestObjectResult(actionContext.ModelState);
 
-        var original = await LoadOriginalAsync(otterApiRouteInfo);
+        var original = await LoadOriginalAsync(otterApiRouteInfo, ct);
         if (original == null)
             return new NotFoundObjectResult(null);
 
         dbContext.Entry(entity).State = EntityState.Modified;
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, entity, original, OtterApiCrudOperation.Put);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(ct);
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, entity, original, OtterApiCrudOperation.Put);
 
         return new OkObjectResult(entity);
     }
 
-    public async Task<ObjectResult> PatchAsync(OtterApiRouteInfo otterApiRouteInfo, JsonObject patch)
+    public async Task<ObjectResult> PatchAsync(OtterApiRouteInfo otterApiRouteInfo, JsonObject patch, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
@@ -159,7 +159,7 @@ public class OtterApiRestController(
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for PATCH operations");
 
-        var original = await LoadOriginalAsync(otterApiRouteInfo);
+        var original = await LoadOriginalAsync(otterApiRouteInfo, ct);
         if (original == null)
             return new NotFoundObjectResult(null);
 
@@ -194,14 +194,14 @@ public class OtterApiRestController(
 
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, tracked, original, OtterApiCrudOperation.Patch);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(ct);
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, tracked, original, OtterApiCrudOperation.Patch);
 
         return GetOkObjectResult(tracked);
     }
 
-    public async Task<ObjectResult> DeleteAsync(OtterApiRouteInfo otterApiRouteInfo)
+    public async Task<ObjectResult> DeleteAsync(OtterApiRouteInfo otterApiRouteInfo, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
             throw new Exception(KeylessError);
@@ -219,7 +219,7 @@ public class OtterApiRestController(
         dbContext.Remove(entity);
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, entity, entity, OtterApiCrudOperation.Delete);
-        await dbContext.SaveChangesAsync();
+        await dbContext.SaveChangesAsync(ct);
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, entity, entity, OtterApiCrudOperation.Delete);
 
@@ -232,7 +232,7 @@ public class OtterApiRestController(
         return actionContext.ModelState.IsValid;
     }
 
-    private async Task<object?> LoadOriginalAsync(OtterApiRouteInfo otterApiRouteInfo)
+    private async Task<object?> LoadOriginalAsync(OtterApiRouteInfo otterApiRouteInfo, CancellationToken ct = default)
     {
         var idValue    = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id!, otterApiRouteInfo.Entity.Id!.PropertyType);
         var dbSet      = otterApiRouteInfo.Entity.GetDbSet(dbContext);
@@ -240,7 +240,7 @@ public class OtterApiRestController(
         noTracking = ApplyQueryFilters(noTracking, otterApiRouteInfo.Entity);
         noTracking = ApplyScopedQueryFilters(noTracking, otterApiRouteInfo.Entity);
         noTracking = otterApiRouteInfo.Entity.WhereId(noTracking, idValue);
-        return (await otterApiRouteInfo.Entity.ToListAsync(noTracking, CancellationToken.None)).FirstOrDefault();
+        return (await otterApiRouteInfo.Entity.ToListAsync(noTracking, ct)).FirstOrDefault();
     }
 
     /// <summary>
@@ -254,7 +254,7 @@ public class OtterApiRestController(
     /// 6. Pagination / Take: client skip/take → custom route Take
     /// 7. Single mode: returns first item or 404
     /// </summary>
-    private async Task<ObjectResult> GetCustomRouteAsync(OtterApiRouteInfo routeInfo)
+    private async Task<ObjectResult> GetCustomRouteAsync(OtterApiRouteInfo routeInfo, CancellationToken ct = default)
     {
         var cr    = routeInfo.CustomRoute!;
         var dbSet = routeInfo.Entity.GetDbSet(dbContext);
@@ -282,7 +282,7 @@ public class OtterApiRestController(
         // 6a. Single mode — return first item (Take(1) for efficiency) or 404
         if (cr.Single)
         {
-            var item = (await routeInfo.Entity.ToListAsync(OtterApiDynamicLinq.Take(dbSet, 1), CancellationToken.None)).FirstOrDefault();
+            var item = (await routeInfo.Entity.ToListAsync(OtterApiDynamicLinq.Take(dbSet, 1), ct)).FirstOrDefault();
             return item != null ? GetOkObjectResult(item) : new NotFoundObjectResult(null);
         }
 
@@ -293,17 +293,17 @@ public class OtterApiRestController(
         else if (routeInfo.Skip > 0)
             dbSet = OtterApiDynamicLinq.Skip(dbSet, routeInfo.Skip);
 
-        return GetOkObjectResult(await routeInfo.Entity.ToListAsync(dbSet, CancellationToken.None));
+        return GetOkObjectResult(await routeInfo.Entity.ToListAsync(dbSet, ct));
     }
 
-    private async Task<OtterApiPagedResult> GetPagedResultAsync(OtterApiEntity entity, IQueryable dbSet, int page, int pageSize)
+    private async Task<OtterApiPagedResult> GetPagedResultAsync(OtterApiEntity entity, IQueryable dbSet, int page, int pageSize, CancellationToken ct = default)
     {
-        var total    = await entity.CountAsync(dbSet, CancellationToken.None);
+        var total    = await entity.CountAsync(dbSet, ct);
         var pagedSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, (page - 1) * pageSize), pageSize);
 
         return new OtterApiPagedResult
         {
-            Items     = await entity.ToListAsync(pagedSet, CancellationToken.None),
+            Items     = await entity.ToListAsync(pagedSet, ct),
             Page      = page,
             PageSize  = pageSize,
             PageCount = (int)Math.Ceiling(total / (decimal)pageSize),

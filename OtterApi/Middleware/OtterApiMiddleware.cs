@@ -53,26 +53,29 @@ public class OtterApiMiddleware(RequestDelegate next)
                 switch (context.Request.Method)
                 {
                     case "GET":
-                        result = await controller.GetAsync(routeInfo);
+                        result = await controller.GetAsync(routeInfo, context.RequestAborted);
                         break;
 
                     case "POST":
                         result = await controller.PostAsync(routeInfo,
-                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType));
+                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType),
+                            context.RequestAborted);
                         break;
 
                     case "PUT":
                         result = await controller.PutAsync(routeInfo,
-                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType));
+                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType),
+                            context.RequestAborted);
                         break;
 
                     case "DELETE":
-                        result = await controller.DeleteAsync(routeInfo);
+                        result = await controller.DeleteAsync(routeInfo, context.RequestAborted);
                         break;
 
                     case "PATCH":
                         result = await controller.PatchAsync(routeInfo,
-                            await otterApiRequestProcessor.GetPatchData(context.Request));
+                            await otterApiRequestProcessor.GetPatchData(context.Request),
+                            context.RequestAborted);
                         break;
                 }
             }
@@ -128,6 +131,10 @@ public class OtterApiMiddleware(RequestDelegate next)
 
             case "DELETE":
                 methodPolicy = aPiEntity.DeletePolicy;
+                break;
+
+            case "PATCH":
+                methodPolicy = aPiEntity.PatchPolicy;
                 break;
         }
 

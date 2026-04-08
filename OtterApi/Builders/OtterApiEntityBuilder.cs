@@ -16,6 +16,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private readonly string route;
     private bool authorize;
     private string? deletePolicy;
+    private string? patchPolicy;
     private string? entityPolicy;
     private bool exposePagedResult;
     private string? getPolicy;
@@ -66,6 +67,12 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     public OtterApiEntityBuilder<T> WithDeletePolicy(string policy)
     {
         deletePolicy = policy;
+        return this;
+    }
+
+    public OtterApiEntityBuilder<T> WithPatchPolicy(string policy)
+    {
+        patchPolicy = policy;
         return this;
     }
 
@@ -262,6 +269,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             PostPolicy = postPolicy,
             PutPolicy = putPolicy,
             DeletePolicy = deletePolicy,
+            PatchPolicy = patchPolicy,
             EntityPolicy = entityPolicy,
             Authorize = authorize,
             DbSet = dbSetProperty,

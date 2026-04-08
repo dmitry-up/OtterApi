@@ -16,6 +16,8 @@ public class OtterApiEntity
 
     public string DeletePolicy { get; set; }
 
+    public string PatchPolicy { get; set; }
+
     public string EntityPolicy { get; set; }
 
     public bool Authorize { get; set; }
