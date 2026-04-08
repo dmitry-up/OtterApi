@@ -530,30 +530,25 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
 
         foreach (var entity in registry.Entities)
         {
-            if (!swaggerDoc.Components.Schemas.ContainsKey(entity.EntityType.Name.ToLower()))
+            var schemaKey = entity.EntityType.Name.ToLower();
+            if (!swaggerDoc.Components.Schemas.ContainsKey(schemaKey))
             {
-                swaggerDoc.Components.Schemas.Add(entity.EntityType.Name.ToLower(), new OpenApiSchema
+                var entitySchema = new OpenApiSchema
                 {
                     Type = "object",
                     Properties = new Dictionary<string, OpenApiSchema>()
-                });
+                };
+                swaggerDoc.Components.Schemas.Add(schemaKey, entitySchema);
 
                 foreach (var prop in entity.Properties)
                 {
                     var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                     if (type.IsEnum)
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
-                    }
+                        entitySchema.Properties.Add(prop.Name, BuildEnumSchema(type));
                     else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, schemaFactory());
-                    }
+                        entitySchema.Properties.Add(prop.Name, schemaFactory());
                     else
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name,
-                            new OpenApiSchema { Type = "object" });
-                    }
+                        entitySchema.Properties.Add(prop.Name, new OpenApiSchema { Type = "object" });
                 }
             }
         }
@@ -561,40 +556,31 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
         if (registry.Entities.Any(x => x.ExposePagedResult)
             && !swaggerDoc.Components.Schemas.ContainsKey("pagedresult"))
         {
-            swaggerDoc.Components.Schemas.Add("pagedresult", new OpenApiSchema
+            var pagedSchema = new OpenApiSchema
             {
                 Type = "object",
                 Properties = new Dictionary<string, OpenApiSchema>()
-            });
+            };
+            swaggerDoc.Components.Schemas.Add("pagedresult", pagedSchema);
 
             foreach (var prop in typeof(OtterApiPagedResult).GetProperties())
             {
                 var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                    if (!prop.PropertyType.IsGenericType)
-                    {
-                        if (type.IsEnum)
-                        {
-                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
-                        }
-                        else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
-                        {
-                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, schemaFactory());
-                        }
-                        else
-                        {
-                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name,
-                                new OpenApiSchema { Type = "object" });
-                        }
-                    }
+                if (!prop.PropertyType.IsGenericType)
+                {
+                    if (type.IsEnum)
+                        pagedSchema.Properties.Add(prop.Name, BuildEnumSchema(type));
+                    else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
+                        pagedSchema.Properties.Add(prop.Name, schemaFactory());
+                    else
+                        pagedSchema.Properties.Add(prop.Name, new OpenApiSchema { Type = "object" });
+                }
                 else
                 {
-                    swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, new OpenApiSchema
+                    pagedSchema.Properties.Add(prop.Name, new OpenApiSchema
                     {
-                        Type = "array",
-                        Items = new OpenApiSchema
-                        {
-                            Type = "object"
-                        }
+                        Type  = "array",
+                        Items = new OpenApiSchema { Type = "object" }
                     });
                 }
             }
