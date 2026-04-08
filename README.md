@@ -52,7 +52,7 @@ dotnet add package OtterApi
 | Package | Version |
 |---|---|
 | Microsoft.EntityFrameworkCore | 8.0.0 |
-| System.Linq.Dynamic.Core | 1.3.12 |
+| System.Linq.Dynamic.Core | 1.7.2 |
 | Swashbuckle.AspNetCore.SwaggerGen | 6.3.1 |
 
 ---
@@ -151,12 +151,21 @@ options.Entity<TEntity>(route)
     .WithPostPolicy(string policy)
     .WithPutPolicy(string policy)
     .WithDeletePolicy(string policy)
+    .Allow(OtterApiCrudOperation operations)
     .ExposePagedResult(bool expose = true)
     .BeforeSave(...)
     .AfterSave(...);
 ```
 
 Every method returns the same `OtterApiEntityBuilder<T>` instance, so calls can be chained fluently.
+
+`.Allow()` restricts which HTTP methods are accepted. Requests for a disallowed method return `405 Method Not Allowed`.
+
+```csharp
+// Allow only GET and POST — disable PUT and DELETE
+options.Entity<Product>("products")
+    .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post);
+```
 
 **Entity requirements:**
 
@@ -326,7 +335,7 @@ Content-Type: application/json
 
 **Responses:**
 - `200 OK` — updated object
-- `400 Bad Request` — Id mismatch between URL and body, or validation errors
+- `400 Bad Request` — Id missing from URL, Id mismatch between URL and body, or validation errors
 - `404 Not Found` — record does not exist
 
 ---
@@ -341,6 +350,7 @@ DELETE /api/products/4
 
 **Responses:**
 - `200 OK`
+- `400 Bad Request` — Id missing from URL
 - `404 Not Found`
 
 ---
@@ -398,6 +408,8 @@ GET /api/products?filter[categoryId]=1
 
 Syntax: `filter[propertyName][operator]=value`
 
+> Operator names are **case-insensitive**: `eq`, `EQ`, and `Eq` all work identically.
+
 | Operator | Supported types | Description | Example |
 |---|---|---|---|
 | `eq` | string, value types, Guid | Equal to | `filter[name][eq]=Laptop` |
@@ -436,8 +448,8 @@ GET /api/products?sort[price]=asc&sort[name]=desc
 
 | Parameter | Description |
 |---|---|
-| `page` | Page number, starting from 1 (default: 1) |
-| `pagesize` | Number of items per page |
+| `page` | Page number, starting from 1 (default: 1). Non-numeric or zero values silently default to 1. |
+| `pagesize` | Number of items per page. Non-numeric values are ignored (no pagination applied). |
 
 ```http
 GET /api/products?page=1&pagesize=20
@@ -537,13 +549,18 @@ Hooks let you execute arbitrary logic **before** or **after** an entity is saved
 ### `OtterApiCrudOperation`
 
 ```csharp
+[Flags]
 public enum OtterApiCrudOperation
 {
-    Post,
-    Put,
-    Delete
+    Get    = 1,
+    Post   = 2,
+    Put    = 4,
+    Delete = 8,
+    All    = Get | Post | Put | Delete
 }
 ```
+
+> **Note.** `BeforeSave` / `AfterSave` hooks are invoked only for `Post`, `Put`, and `Delete` operations. `Get` is included in the enum solely for use with `.Allow()`.
 
 ---
 
@@ -998,5 +1015,9 @@ Authorization: Bearer <token>
 | **`operator=or` is global** | The `operator=or` parameter switches the join logic for **all** filters in the request. Mixing AND and OR for different fields in a single query is not supported. |
 | **Validation** | OtterApi validates Data Annotations (`[Required]`, `[MaxLength]`, etc.) using the standard `IObjectModelValidator`. Invalid requests return `400 Bad Request` with the model state. |
 | **Enum deserialization** | Enums are deserialized case-insensitively as both strings and numbers. |
+| **Filter operator names** | Operator names (`eq`, `like`, `in`, etc.) are case-insensitive in the URL. |
+| **PUT / DELETE without Id** | `PUT /api/products` and `DELETE /api/products` (without an Id segment) return `400 Bad Request`. The Id must always be part of the URL path. |
+| **Trailing slash** | A trailing slash (e.g. `/api/products/`) is treated as a collection request, identical to `/api/products`. |
+| **`.Allow()` and HTTP methods** | Requests for a method not included in `AllowedOperations` return `405 Method Not Allowed`. The default allows all four methods. |
 | **Middleware order** | `UseOtterApi()` must be placed **after** `UseAuthentication()` / `UseAuthorization()` and **before** `UseEndpoints()` / `MapControllers()`. |
 | **Target framework** | .NET 8.0 is required. |
