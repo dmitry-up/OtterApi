@@ -23,55 +23,81 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
     /// <summary>
     /// Builds a compiled filter delegate from query-string parameters.
     /// Returns <c>null</c> when no valid filter parameters are present.
-    /// All predicates are combined into a single typed Expression Tree — no string parsing at request time.
+    ///
+    /// Supports two syntaxes (both can be mixed in one request):
+    ///
+    /// Flat (legacy, backward-compatible):
+    ///   filter[Name]=Alice &amp; filter[Price][gt]=10 &amp; operator=or
+    ///   → all flat filters go into the implicit "default" group.
+    ///
+    /// Grouped (new):
+    ///   filter[0][Name]=Alice &amp; filter[0][Price][gt]=10 &amp; operator[0]=or &amp; filter[1][CategoryId]=1
+    ///   → (Name == "Alice" OR Price > 10) AND CategoryId == 1
+    ///
+    /// Rules:
+    ///   • Filters within the same group are combined with that group's operator (AND by default, OR if operator[N]=or).
+    ///   • Groups are always combined with AND.
+    ///   • The group index N must be a non-negative integer to distinguish it from a property name.
     /// </summary>
     public Func<IQueryable, IQueryable>? BuildFilterResult()
     {
-        var useOr = false;
-        foreach (var key in queryString.Keys.Where(x => x.ToLower().StartsWith(Operatorprefix)))
+        // ── Collect per-group operators ───────────────────────────────────────
+        // key "operator"    → "default" group uses OR
+        // key "operator[N]" → group N uses OR
+        var groupOperators = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in queryString.Keys)
         {
-            if (((string?)queryString[key])?.ToLower() == "or")
-                useOr = true;
+            if (!key.Equals(Operatorprefix, StringComparison.OrdinalIgnoreCase) &&
+                !key.StartsWith(Operatorprefix + "[", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!((string?)queryString[key])?.Equals("or", StringComparison.OrdinalIgnoreCase) ?? true)
+                continue;
+
+            var groupId = ParseOperatorGroupId(key) ?? "default";
+            groupOperators[groupId] = true;
         }
 
-        var predicates = new List<LambdaExpression>();
+        // ── Collect per-group predicates ──────────────────────────────────────
+        var groups = new Dictionary<string, List<LambdaExpression>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var key in queryString.Keys.Where(x => x.ToLower().StartsWith(Filterprefix)))
+        foreach (var key in queryString.Keys.Where(x =>
+                     x.StartsWith(Filterprefix, StringComparison.OrdinalIgnoreCase)))
         {
-            var parts = GetQueryStringParts(key);
-            if (parts.property == null) continue;
+            var (groupId, property, opParts) = ParseFilterKey(key);
+            if (property == null) continue;
 
             OtterApiFilterResult filterResult;
-            if (parts.queryStringParts.Count == 0)
-                filterResult = new OtterApiFilterOtterApiExpression(
-                    parts.property, queryString[key]!).Build();
-            else if (parts.queryStringParts.Count == 1)
-                filterResult = new OtterApiFilterOperatorExpression(
-                    parts.property, queryString[key]!, parts.queryStringParts.First()).Build();
+            if (opParts.Count == 0)
+                filterResult = new OtterApiFilterOtterApiExpression(property, queryString[key]!).Build();
+            else if (opParts.Count == 1)
+                filterResult = new OtterApiFilterOperatorExpression(property, queryString[key]!, opParts[0]).Build();
             else
                 continue;
 
-            if (filterResult.Predicate != null)
-                predicates.Add(filterResult.Predicate);
+            if (filterResult.Predicate == null) continue;
+
+            if (!groups.TryGetValue(groupId, out var list))
+                groups[groupId] = list = [];
+            list.Add(filterResult.Predicate);
         }
 
-        if (predicates.Count == 0) return null;
+        if (groups.Count == 0) return null;
 
-        // Combine all predicates under a single shared ParameterExpression
-        var sharedParam = predicates[0].Parameters[0];
-        Expression combined = predicates[0].Body;
-
-        for (var i = 1; i < predicates.Count; i++)
+        // ── Combine: OR within each group, then AND between groups ───────────
+        var groupPredicates = new List<LambdaExpression>();
+        foreach (var (groupId, predicates) in groups)
         {
-            var nextBody = new ParameterReplacer(predicates[i].Parameters[0], sharedParam)
-                .Visit(predicates[i].Body);
-            combined = useOr
-                ? Expression.OrElse(combined, nextBody)
-                : Expression.AndAlso(combined, nextBody);
+            var useOr   = groupOperators.GetValueOrDefault(groupId, false);
+            var combined = CombinePredicates(predicates, useOr);
+            if (combined != null) groupPredicates.Add(combined);
         }
 
-        var lambda = Expression.Lambda(combined, sharedParam);
-        return q => OtterApiDynamicLinq.Where(q, lambda);
+        if (groupPredicates.Count == 0) return null;
+
+        var final = CombinePredicates(groupPredicates, useOr: false)!;
+        return q => OtterApiDynamicLinq.Where(q, final);
     }
 
     /// <summary>
@@ -133,6 +159,50 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
         return result;
     }
 
+    /// <summary>
+    /// Parses a filter key into (groupId, property, operatorParts).
+    /// filter[Name]          → ("default", prop, [])
+    /// filter[Name][gt]      → ("default", prop, ["gt"])
+    /// filter[0][Name]       → ("0",       prop, [])
+    /// filter[0][Name][gt]   → ("0",       prop, ["gt"])
+    /// The group prefix is recognised only when the first segment is a non-negative integer.
+    /// </summary>
+    private (string groupId, PropertyInfo? property, List<string> opParts) ParseFilterKey(string key)
+    {
+        var segments = key.Split(['[', ']'], StringSplitOptions.RemoveEmptyEntries).Skip(1).ToList();
+
+        string       groupId;
+        List<string> tail;
+
+        if (segments.Count > 0 && int.TryParse(segments[0], out var n) && n >= 0)
+        {
+            groupId = segments[0];
+            tail    = segments.Skip(1).ToList();
+        }
+        else
+        {
+            groupId = "default";
+            tail    = segments;
+        }
+
+        var property = otterApiEntity.Properties
+            .FirstOrDefault(x => x.Name.Equals(tail.FirstOrDefault(), StringComparison.OrdinalIgnoreCase));
+
+        return (groupId, property, tail.Skip(1).ToList());
+    }
+
+    /// <summary>
+    /// Extracts the group ID from an operator key.
+    /// "operator"    → null  (caller maps to "default")
+    /// "operator[0]" → "0"
+    /// </summary>
+    private static string? ParseOperatorGroupId(string key)
+    {
+        var segments = key.Split(['[', ']'], StringSplitOptions.RemoveEmptyEntries).Skip(1).ToList();
+        return segments.Count > 0 ? segments[0] : null;
+    }
+
+    /// <summary>Kept for BuildSortResult which uses the flat sort-key format.</summary>
     private (PropertyInfo? property, List<string> queryStringParts) GetQueryStringParts(string key)
     {
         var parts = key.Split(['[', ']'], StringSplitOptions.RemoveEmptyEntries).Skip(1).ToList();
@@ -141,6 +211,30 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
                     .Where(x => x.Name.ToLower() == parts.FirstOrDefault()?.ToLower())
                     .FirstOrDefault(),
                 parts.Skip(1).ToList());
+    }
+
+    /// <summary>
+    /// Combines predicates with AndAlso or OrElse, rewriting all ParameterExpressions
+    /// to a single shared instance via <see cref="ParameterReplacer"/>.
+    /// </summary>
+    private static LambdaExpression? CombinePredicates(List<LambdaExpression> predicates, bool useOr)
+    {
+        if (predicates.Count == 0) return null;
+        if (predicates.Count == 1) return predicates[0];
+
+        var sharedParam = predicates[0].Parameters[0];
+        Expression combined = predicates[0].Body;
+
+        for (var i = 1; i < predicates.Count; i++)
+        {
+            var nextBody = new ParameterReplacer(predicates[i].Parameters[0], sharedParam)
+                .Visit(predicates[i].Body);
+            combined = useOr
+                ? Expression.OrElse(combined, nextBody)
+                : Expression.AndAlso(combined, nextBody);
+        }
+
+        return Expression.Lambda(combined, sharedParam);
     }
 
     // ── Private: rewrites one ParameterExpression to another in an expression body ──

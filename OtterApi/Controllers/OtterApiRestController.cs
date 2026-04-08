@@ -132,7 +132,7 @@ public class OtterApiRestController(
         var routeId  = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
 
         if (!objectId!.Equals(routeId))
-            return new BadRequestObjectResult(null);
+            return new BadRequestObjectResult("Id in route must match Id in the request body");
 
         if (!IsValid(entity))
             return new BadRequestObjectResult(actionContext.ModelState);

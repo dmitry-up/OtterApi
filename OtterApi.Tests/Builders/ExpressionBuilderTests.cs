@@ -223,6 +223,142 @@ public class ExpressionBuilderTests
         Assert.Null(filter);
     }
 
+    // ── BuildFilterResult – grouped filters (new syntax) ─────────────────────
+
+    [Fact]
+    public void BuildFilterResult_GroupedSyntax_OrWithinSingleGroup()
+    {
+        // filter[0][Name]=Alice & filter[0][Age]=30 & operator[0]=or
+        // → Name == "Alice" OR Age == 30
+        var qs = Query(new()
+        {
+            ["filter[0][Name]"] = "Alice",
+            ["filter[0][Age]"]  = "30",
+            ["operator[0]"]     = "or"
+        });
+        var filter = new OtterApiExpressionBuilder(qs, BuildEntity()).BuildFilterResult();
+
+        Assert.NotNull(filter);
+
+        var data = new[]
+        {
+            new ProductStub { Name = "Alice", Age = 25 },   // Name matches → in
+            new ProductStub { Name = "Bob",   Age = 30 },   // Age matches  → in
+            new ProductStub { Name = "Charlie", Age = 99 }, // neither      → out
+        };
+        var matched = ApplyFilter(filter!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.DoesNotContain(matched, m => m.Name == "Charlie");
+    }
+
+    [Fact]
+    public void BuildFilterResult_GroupedSyntax_TwoGroups_OrInFirstAndBetweenGroups()
+    {
+        // filter[0][Name][like]=ali & filter[0][Age][gt]=25 & operator[0]=or & filter[1][Id]=1
+        // → (Name contains "ali" OR Age > 25) AND Id == 1
+        var qs = Query(new()
+        {
+            ["filter[0][Name][like]"] = "ali",
+            ["filter[0][Age][gt]"]    = "25",
+            ["operator[0]"]           = "or",
+            ["filter[1][Id]"]         = "1"
+        });
+        var filter = new OtterApiExpressionBuilder(qs, BuildEntity()).BuildFilterResult();
+
+        Assert.NotNull(filter);
+
+        var data = new[]
+        {
+            new ProductStub { Id = 1, Name = "alice", Age = 20 }, // OR: name ✓, AND: id ✓ → in
+            new ProductStub { Id = 1, Name = "Bob",   Age = 30 }, // OR: age  ✓, AND: id ✓ → in
+            new ProductStub { Id = 2, Name = "alice", Age = 20 }, // OR: name ✓, AND: id ✗ → out
+            new ProductStub { Id = 1, Name = "Bob",   Age = 10 }, // OR: none ✗            → out
+        };
+        var matched = ApplyFilter(filter!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, m => Assert.Equal(1, m.Id));
+    }
+
+    [Fact]
+    public void BuildFilterResult_GroupedSyntax_TwoGroupsBothDefaultAnd()
+    {
+        // filter[0][Name]=Alice & filter[1][Age]=30 — no operators → all AND
+        // → Name == "Alice" AND Age == 30
+        var qs = Query(new()
+        {
+            ["filter[0][Name]"] = "Alice",
+            ["filter[1][Age]"]  = "30"
+        });
+        var filter = new OtterApiExpressionBuilder(qs, BuildEntity()).BuildFilterResult();
+
+        Assert.NotNull(filter);
+
+        var data = new[]
+        {
+            new ProductStub { Name = "Alice", Age = 30 },   // both → in
+            new ProductStub { Name = "Alice", Age = 25 },   // Age wrong → out
+            new ProductStub { Name = "Bob",   Age = 30 },   // Name wrong → out
+        };
+        var matched = ApplyFilter(filter!, data);
+
+        Assert.Single(matched);
+        Assert.Equal("Alice", matched[0].Name);
+        Assert.Equal(30, matched[0].Age);
+    }
+
+    [Fact]
+    public void BuildFilterResult_GroupedSyntax_OrOperatorIsCaseInsensitive()
+    {
+        var qs = Query(new()
+        {
+            ["filter[0][Name]"] = "Alice",
+            ["filter[0][Age]"]  = "30",
+            ["operator[0]"]     = "OR"   // uppercase
+        });
+        var filter = new OtterApiExpressionBuilder(qs, BuildEntity()).BuildFilterResult();
+
+        Assert.NotNull(filter);
+
+        var data = new[]
+        {
+            new ProductStub { Name = "Alice", Age = 25 },
+            new ProductStub { Name = "Bob",   Age = 30 },
+        };
+        // OR: both should match
+        Assert.Equal(2, ApplyFilter(filter!, data).Count);
+    }
+
+    [Fact]
+    public void BuildFilterResult_FlatAndGrouped_CanBeMixed()
+    {
+        // filter[Name]=Alice (flat → "default" group, AND)
+        // filter[0][Age][gt]=25 & filter[0][Id][gt]=0 & operator[0]=or
+        // → Name == "Alice"  AND  (Age > 25 OR Id > 0)
+        var qs = Query(new()
+        {
+            ["filter[Name]"]       = "Alice",
+            ["filter[0][Age][gt]"] = "25",
+            ["filter[0][Id][gt]"]  = "0",
+            ["operator[0]"]        = "or"
+        });
+        var filter = new OtterApiExpressionBuilder(qs, BuildEntity()).BuildFilterResult();
+
+        Assert.NotNull(filter);
+
+        var data = new[]
+        {
+            new ProductStub { Id = 1, Name = "Alice",   Age = 30 }, // Name ✓, OR: age ✓  → in
+            new ProductStub { Id = 1, Name = "Alice",   Age = 20 }, // Name ✓, OR: id  ✓  → in
+            new ProductStub { Id = 1, Name = "Bob",     Age = 30 }, // Name ✗             → out
+        };
+        var matched = ApplyFilter(filter!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, m => Assert.Equal("Alice", m.Name));
+    }
+
     // ── BuildSortResult ───────────────────────────────────────────────────────
 
     [Fact]

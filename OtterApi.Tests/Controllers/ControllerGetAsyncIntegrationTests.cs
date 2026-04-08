@@ -586,6 +586,20 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
         Assert.Equal("BetaUpdated", fromDb.Name);
         Assert.Equal(99m,           fromDb.Price);
     }
+
+    [Fact]
+    public async Task PutAsync_WithMismatchedBodyAndRouteId_ReturnsBadRequest()
+    {
+        // Route says Id=2, but body has Id=3 — controller must reject this
+        var routeInfo = CollectionRoute();
+        routeInfo.Id  = "2";
+
+        var updated = new TestProduct { Id = 3, Name = "Mismatch", Price = 5m, CategoryId = 1 };
+
+        var result = await _ctrl.PutAsync(routeInfo, updated);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
 }
 
 
