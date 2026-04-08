@@ -213,6 +213,13 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
                 $"Duplicate custom route slugs on entity '{entityType.Name}': " +
                 $"{string.Join(", ", duplicateSlugs)}.");
 
+        // ── Compile GetDbSet delegate: (DbContext ctx) => (IQueryable)((TDbCtx)ctx).DbSetProp ──
+        var ctxParam   = Expression.Parameter(typeof(DbContext), "ctx");
+        var castCtx    = Expression.Convert(ctxParam, dbContextType);
+        var propAccess = Expression.Property(castCtx, dbSetProperty);
+        var castToQ    = Expression.Convert(propAccess, typeof(IQueryable));
+        var getDbSet   = Expression.Lambda<Func<DbContext, IQueryable>>(castToQ, ctxParam).Compile();
+
         return new OtterApiEntity
         {
             Route = route,
@@ -243,7 +250,8 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             FindByIdAsync = async (ctx, id) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }),
             AsNoTracking  = q => ((IQueryable<T>)q).AsNoTracking(),
             CountAsync    = (q, ct) => ((IQueryable<T>)q).CountAsync(ct),
-            Include       = (q, nav) => ((IQueryable<T>)q).Include(nav)
+            Include       = (q, nav) => ((IQueryable<T>)q).Include(nav),
+            GetDbSet      = getDbSet
         };
     }
 }

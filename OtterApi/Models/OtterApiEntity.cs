@@ -88,4 +88,10 @@ public class OtterApiEntity
     /// Compiled at startup — no DLR overhead per request.
     /// </summary>
     public Func<IQueryable, string, IQueryable> Include { get; set; } = null!;
+
+    /// <summary>
+    /// Returns the typed DbSet from the DbContext as an untyped IQueryable.
+    /// Compiled at startup via Expression Tree — no reflection overhead per request.
+    /// </summary>
+    public Func<DbContext, IQueryable> GetDbSet { get; set; } = null!;
 }

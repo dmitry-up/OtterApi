@@ -1,7 +1,7 @@
-﻿using System.ComponentModel;
-using System.Reflection;
+﻿using System.Reflection;
 using System.Text.Json;
 using OtterApi.Configs;
+using OtterApi.Converters;
 using OtterApi.Models;
 
 namespace OtterApi.Expressions;
@@ -31,7 +31,7 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
             Filter = OtterApiConfiguration.Operators
                 .Where(x => x.Name.Equals(comparisonOperator, StringComparison.InvariantCultureIgnoreCase)).First().Expression
                 .Replace("{propertyName}", property.Name).Replace("{index}", index.ToString()),
-            Values = [list ?? TypeDescriptor.GetConverter(type).ConvertFromString(value)],
+            Values = [list ?? OtterApiTypeConverter.ChangeType(value, type)],
             NextIndex = index + 1
         };
     }

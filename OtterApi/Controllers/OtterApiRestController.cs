@@ -64,7 +64,7 @@ public class OtterApiRestController(
             // Query filters present → use Where so filters are applied in the same SQL query.
             // Returns 404 if the record exists but does not pass the filter (do not reveal its existence).
             var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
-            var filteredSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+            var filteredSet = otterApiRouteInfo.Entity.GetDbSet(dbContext);
             filteredSet = ApplyQueryFilters(filteredSet, otterApiRouteInfo.Entity);
             filteredSet = ApplyScopedQueryFilters(filteredSet, otterApiRouteInfo.Entity);
             var filteredResult = (await filteredSet
@@ -74,7 +74,7 @@ public class OtterApiRestController(
             return filteredResult != null ? GetOkObjectResult(filteredResult) : new NotFoundObjectResult(null);
         }
 
-        var dbSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+        var dbSet = otterApiRouteInfo.Entity.GetDbSet(dbContext);
 
         dbSet = ApplyQueryFilters(dbSet, otterApiRouteInfo.Entity);
         dbSet = ApplyScopedQueryFilters(dbSet, otterApiRouteInfo.Entity);
@@ -255,7 +255,7 @@ public class OtterApiRestController(
     private async Task<object?> LoadOriginalAsync(OtterApiRouteInfo otterApiRouteInfo)
     {
         var idValue    = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
-        var dbSet      = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+        var dbSet      = otterApiRouteInfo.Entity.GetDbSet(dbContext);
         var noTracking = otterApiRouteInfo.Entity.AsNoTracking(dbSet);
         noTracking = ApplyQueryFilters(noTracking, otterApiRouteInfo.Entity);
         noTracking = ApplyScopedQueryFilters(noTracking, otterApiRouteInfo.Entity);
@@ -279,7 +279,7 @@ public class OtterApiRestController(
     private async Task<ObjectResult> GetCustomRouteAsync(OtterApiRouteInfo routeInfo)
     {
         var cr    = routeInfo.CustomRoute!;
-        var dbSet = (IQueryable)routeInfo.Entity.DbSet.GetValue(dbContext)!;
+        var dbSet = routeInfo.Entity.GetDbSet(dbContext);
 
         dbSet = ApplyQueryFilters(dbSet, routeInfo.Entity);
         dbSet = ApplyScopedQueryFilters(dbSet, routeInfo.Entity);
