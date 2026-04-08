@@ -110,6 +110,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
             var allowPost   = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Post);
             var allowPut    = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Put);
             var allowDelete = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Delete);
+            var allowPatch  = entity.AllowedOperations.HasFlag(OtterApiCrudOperation.Patch);
 
             // main route: GET list + POST
             var mainOperations = new Dictionary<OperationType, OpenApiOperation>();
@@ -266,6 +267,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
 
             if (allowPut)
             {
+                // ...existing PUT operation...
                 idOperations[OperationType.Put] = new OpenApiOperation
                 {
                     OperationId = GetOperationId($"{entity.Route.ToLower()}/updateById"),
@@ -301,6 +303,62 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                         Content =
                         {
                             ["application/json"] = new OpenApiMediaType
+                            {
+                                Schema = new OpenApiSchema
+                                {
+                                    Reference = new OpenApiReference
+                                    {
+                                        Type = ReferenceType.Schema,
+                                        Id = $"{entity.EntityType.Name.ToLower()}"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+            }
+
+            if (allowPatch)
+            {
+                idOperations[OperationType.Patch] = new OpenApiOperation
+                {
+                    OperationId = GetOperationId($"{entity.Route.ToLower()}/patchById"),
+                    Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
+                    Description = $"Partially update {entity.EntityType.Name} by id (RFC 7396 JSON Merge Patch). " +
+                                  "Only the fields present in the request body are updated; omitted fields are left unchanged.",
+                    Responses =
+                    {
+                        ["200"] = new OpenApiResponse
+                        {
+                            Description = "Success",
+                            Content =
+                            {
+                                ["application/json"] = new OpenApiMediaType
+                                {
+                                    Schema = new OpenApiSchema
+                                    {
+                                        Reference = new OpenApiReference
+                                        {
+                                            Type = ReferenceType.Schema,
+                                            Id = $"{entity.EntityType.Name.ToLower()}"
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        ["400"] = new OpenApiResponse { Description = "Validation error or missing Id" },
+                        ["404"] = new OpenApiResponse { Description = "Record not found" }
+                    },
+                    Parameters = new List<OpenApiParameter>
+                    {
+                        new() { Name = "id", Schema = idSchema, Required = true, In = ParameterLocation.Path }
+                    },
+                    RequestBody = new OpenApiRequestBody
+                    {
+                        Description = "Partial entity — include only the fields to update.",
+                        Content =
+                        {
+                            ["application/merge-patch+json"] = new OpenApiMediaType
                             {
                                 Schema = new OpenApiSchema
                                 {

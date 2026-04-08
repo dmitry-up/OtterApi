@@ -1,5 +1,6 @@
 ﻿using System.Linq.Dynamic.Core;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
@@ -131,6 +132,63 @@ public class OtterApiRestController(
             await otterApiRouteInfo.Entity.PostSaveHandler(dbContext, entity, original, OtterApiCrudOperation.Put);
 
         return new OkObjectResult(entity);
+    }
+
+    public async Task<ObjectResult> PatchAsync(OtterApiRouteInfo otterApiRouteInfo, JsonObject patch)
+    {
+        if (otterApiRouteInfo.Entity.Id == null)
+            throw new Exception(KeylessError);
+
+        if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
+            return new BadRequestObjectResult("Id is required in the route for PATCH operations");
+
+        // NoTracking snapshot used by handlers to compare before/after
+        var original = await LoadOriginalAsync(otterApiRouteInfo);
+        if (original == null)
+            return new NotFoundObjectResult(null);
+
+        // Tracked entity — EF Core will detect only the modified properties
+        object tracked =
+            await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
+                OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+
+        // Options to handle enums as strings, matching the rest of the library
+        var patchOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        patchOptions.Converters.Add(new OtterApiCaseInsensitiveEnumConverterFactory());
+
+        // Apply only the fields present in the patch document
+        foreach (var (key, node) in patch)
+        {
+            var prop = otterApiRouteInfo.Entity.Properties
+                .FirstOrDefault(p => string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase));
+
+            if (prop == null) continue;   // unknown or navigation property — skip
+
+            if (node is null)
+            {
+                // RFC 7396: null means "remove" — only applicable to nullable fields
+                var isNullable = !prop.PropertyType.IsValueType
+                                 || Nullable.GetUnderlyingType(prop.PropertyType) != null;
+                if (isNullable)
+                    prop.SetValue(tracked, null);
+            }
+            else
+            {
+                var value = node.Deserialize(prop.PropertyType, patchOptions);
+                prop.SetValue(tracked, value);
+            }
+        }
+
+        if (!IsValid(tracked))
+            return new BadRequestObjectResult(actionContext.ModelState);
+
+        if (otterApiRouteInfo.Entity.PreSaveHandler != null)
+            await otterApiRouteInfo.Entity.PreSaveHandler(dbContext, tracked, original, OtterApiCrudOperation.Patch);
+        await dbContext.SaveChangesAsync();
+        if (otterApiRouteInfo.Entity.PostSaveHandler != null)
+            await otterApiRouteInfo.Entity.PostSaveHandler(dbContext, tracked, original, OtterApiCrudOperation.Patch);
+
+        return GetOkObjectResult(tracked);
     }
 
     public async Task<ObjectResult> DeleteAsync(OtterApiRouteInfo otterApiRouteInfo)

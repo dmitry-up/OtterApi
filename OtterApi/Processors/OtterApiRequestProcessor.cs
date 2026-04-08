@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
@@ -47,6 +48,12 @@ public class OtterApiRequestProcessor(
         }
 
         return await JsonSerializer.DeserializeAsync(request.Body, type, options);
+    }
+
+    public async Task<JsonObject> GetPatchData(HttpRequest request)
+    {
+        return await JsonSerializer.DeserializeAsync<JsonObject>(request.Body)
+               ?? new JsonObject();
     }
 
 

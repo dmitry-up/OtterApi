@@ -38,6 +38,7 @@ public class OtterApiMiddleware(RequestDelegate next)
                 "POST"   => OtterApiCrudOperation.Post,
                 "PUT"    => OtterApiCrudOperation.Put,
                 "DELETE" => OtterApiCrudOperation.Delete,
+                "PATCH"  => OtterApiCrudOperation.Patch,
                 _        => (OtterApiCrudOperation?)null
             };
 
@@ -67,6 +68,11 @@ public class OtterApiMiddleware(RequestDelegate next)
 
                     case "DELETE":
                         result = await controller.DeleteAsync(routeInfo);
+                        break;
+
+                    case "PATCH":
+                        result = await controller.PatchAsync(routeInfo,
+                            await otterApiRequestProcessor.GetPatchData(context.Request));
                         break;
                 }
             }

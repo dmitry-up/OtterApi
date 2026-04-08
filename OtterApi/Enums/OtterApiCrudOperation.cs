@@ -7,5 +7,6 @@ public enum OtterApiCrudOperation
     Post   = 2,
     Put    = 4,
     Delete = 8,
-    All    = Get | Post | Put | Delete
+    Patch  = 16,
+    All    = Get | Post | Put | Delete | Patch
 }
