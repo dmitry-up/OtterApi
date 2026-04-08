@@ -19,6 +19,7 @@
   - [UseOtterApi](#useOtterApi)
   - [JsonSerializerOptions](#jsonserializeroptions)
 - [Entity Registration](#entity-registration)
+- [Server-Side Query Filters](#server-side-query-filters)
 - [Authorization](#authorization)
 - [REST API — Endpoint Reference](#rest-api--endpoint-reference)
 - [Query Parameters](#query-parameters)
@@ -153,6 +154,7 @@ options.Entity<TEntity>(route)
     .WithDeletePolicy(string policy)
     .Allow(OtterApiCrudOperation operations)
     .ExposePagedResult(bool expose = true)
+    .WithQueryFilter(Expression<Func<T, bool>> predicate)  // server-side row filter
     .BeforeSave(...)
     .AfterSave(...);
 ```
@@ -176,7 +178,73 @@ options.Entity<Product>("products")
 
 ---
 
-## Authorization
+## Server-Side Query Filters
+
+`.WithQueryFilter(predicate)` registers a permanent, server-side row filter for an entity. The predicate is applied to **every** GET request — list, by-Id, count, pagedresult — before any client-supplied filters, sorting, or pagination.
+
+### Basic Usage
+
+```csharp
+// Only expose available products — unavailable ones are completely invisible
+options.Entity<Product>("products")
+    .WithQueryFilter(p => p.IsAvailable);
+```
+
+After this:
+
+| Request | Behaviour |
+|---|---|
+| `GET /api/products` | Returns only `IsAvailable == true` |
+| `GET /api/products/10` (IsAvailable = false) | **404** — record is hidden, not revealed |
+| `GET /api/products/count` | Counts only available products |
+| `GET /api/products/pagedresult` | `total` and `items` reflect only available products |
+| `PUT /api/products/10` (IsAvailable = false) | **404** — `LoadOriginalAsync` also applies the filter |
+| `PATCH /api/products/10` (IsAvailable = false) | **404** |
+
+> The filter is applied transparently at the SQL/in-memory query level. A record that exists in the database but does not pass the filter behaves exactly as if it does not exist.
+
+### Chaining Multiple Filters (AND semantics)
+
+Each `.WithQueryFilter()` call adds another predicate. All predicates are chained — a row must satisfy **all** of them to be visible.
+
+```csharp
+// A product must be available AND have stock > 0
+options.Entity<Product>("products")
+    .WithQueryFilter(p => p.IsAvailable)
+    .WithQueryFilter(p => p.Stock > 0);
+```
+
+### Compound Conditions in a Single Filter
+
+You can use `&&` and `||` inside a single predicate:
+
+```csharp
+// Hide cancelled and pending orders in one predicate
+options.Entity<Order>("orders")
+    .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending);
+
+// Expose items from tenant 1 OR tenant 2
+options.Entity<Report>("reports")
+    .WithQueryFilter(r => r.TenantId == 1 || r.TenantId == 2);
+```
+
+### Combining with Client Filters
+
+Server-side query filters and client-supplied `filter[...]` parameters are composed with AND. The server filter is applied first:
+
+```http
+# Server filter: IsAvailable == true
+# Client filter:  CategoryId == 1
+# Result:         available products in category 1
+GET /api/products?filter[categoryId]=1
+```
+
+### Limitations
+
+- The predicate must use only **EF-translatable operations** (field comparisons, `&&`, `||`, `!`, constants). Calling arbitrary C# methods that cannot be converted to SQL will throw at runtime.
+- The predicate is compiled **once at startup** — it cannot reference request-scoped data such as the current user Id or a value from the HTTP headers. For dynamic, per-request filtering use a `BeforeSave` hook or a custom middleware.
+
+---
 
 OtterApi uses the standard ASP.NET Core `IAuthorizationService`, so all policies are configured the usual way.
 
@@ -556,11 +624,12 @@ public enum OtterApiCrudOperation
     Post   = 2,
     Put    = 4,
     Delete = 8,
-    All    = Get | Post | Put | Delete
+    Patch  = 16,
+    All    = Get | Post | Put | Delete | Patch
 }
 ```
 
-> **Note.** `BeforeSave` / `AfterSave` hooks are invoked only for `Post`, `Put`, and `Delete` operations. `Get` is included in the enum solely for use with `.Allow()`.
+> **Note.** `BeforeSave` / `AfterSave` hooks are invoked for `Post`, `Put`, `Patch`, and `Delete` operations. `Get` is included in the enum solely for use with `.Allow()`.
 
 ---
 
@@ -908,21 +977,27 @@ builder.Services.AddOtterApi<AppDbContext>(options =>
 {
     options.Path = "/api/v1";
 
+    // Only active categories are exposed — archived ones are completely invisible
     options.Entity<Category>("categories")
         .Authorize()
         .WithDeletePolicy("IsAdmin")
+        .WithQueryFilter(c => c.IsActive)
         .BeforeSave((ctx, cat, _, op) =>
         {
             if (op == OtterApiCrudOperation.Post)
                 cat.Name = cat.Name.Trim();
         });
 
+    // Products must be available AND in stock.
+    // Two chained filters — both must pass (AND semantics).
     options.Entity<Product>("products")
         .Authorize()
         .WithPostPolicy("IsManager")
         .WithPutPolicy("IsManager")
         .WithDeletePolicy("IsAdmin")
         .ExposePagedResult()
+        .WithQueryFilter(p => p.IsActive)
+        .WithQueryFilter(p => p.Stock > 0)
         .BeforeSave(async (ctx, product, original, op) =>
         {
             if (op == OtterApiCrudOperation.Post)
@@ -1011,13 +1086,15 @@ Authorization: Bearer <token>
 | **`include` depth** | Only navigation properties declared directly on the entity are loaded. Nested includes (deeper than one level) are not supported. Unknown property names in `include` are silently ignored. |
 | **One hook per entity** | Only one `BeforeSave` and one `AfterSave` can be registered per entity. Calling `.BeforeSave()` a second time overwrites the first. |
 | **Hooks and DI** | Hooks are registered once at startup. Scoped dependencies must be resolved manually through the provided `DbContext` or a service scope factory. |
-| **Keyless entities** | `GET` only (list + filter). POST, PUT, and DELETE throw an exception. |
-| **`operator=or` is global** | The `operator=or` parameter switches the join logic for **all** filters in the request. Mixing AND and OR for different fields in a single query is not supported. |
+| **Keyless entities** | `GET` only (list + filter). POST, PUT, PATCH, and DELETE throw an exception. |
+| **`operator=or` is global** | The `operator=or` parameter switches the join logic for **all** client-supplied filters in the request. Mixing AND and OR for different fields in a single query is not supported. |
 | **Validation** | OtterApi validates Data Annotations (`[Required]`, `[MaxLength]`, etc.) using the standard `IObjectModelValidator`. Invalid requests return `400 Bad Request` with the model state. |
 | **Enum deserialization** | Enums are deserialized case-insensitively as both strings and numbers. |
 | **Filter operator names** | Operator names (`eq`, `like`, `in`, etc.) are case-insensitive in the URL. |
 | **PUT / DELETE without Id** | `PUT /api/products` and `DELETE /api/products` (without an Id segment) return `400 Bad Request`. The Id must always be part of the URL path. |
 | **Trailing slash** | A trailing slash (e.g. `/api/products/`) is treated as a collection request, identical to `/api/products`. |
-| **`.Allow()` and HTTP methods** | Requests for a method not included in `AllowedOperations` return `405 Method Not Allowed`. The default allows all four methods. |
+| **`.Allow()` and HTTP methods** | Requests for a method not included in `AllowedOperations` return `405 Method Not Allowed`. The default allows all methods. |
 | **Middleware order** | `UseOtterApi()` must be placed **after** `UseAuthentication()` / `UseAuthorization()` and **before** `UseEndpoints()` / `MapControllers()`. |
+| **`WithQueryFilter` — EF-translatable only** | Predicates passed to `.WithQueryFilter()` must be expressible in SQL (field comparisons, `&&`, `\|\|`, constants). Arbitrary C# logic that cannot be converted to a query will throw at runtime. |
+| **`WithQueryFilter` — static only** | Predicates are compiled once at application startup. They cannot reference request-scoped data (current user, HTTP headers, etc.). For dynamic per-request filtering, use a `BeforeSave` hook or a custom middleware instead. |
 | **Target framework** | .NET 8.0 is required. |

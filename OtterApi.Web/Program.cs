@@ -15,15 +15,30 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
 {
     options.Path = "/api";
 
+    // Only expose active categories — archived ones are invisible to consumers.
+    // GET /api/categories        → returns only IsActive == true
+    // GET /api/categories/{id}   → 404 when the category is archived
     options.Entity<Category>("categories")
-        .ExposePagedResult();
+        .ExposePagedResult()
+        .WithQueryFilter(c => c.IsActive);
 
+    // Only expose products that are currently available.
+    // The "Discontinued Gadget" (Id=10, IsAvailable=false) is hidden from all GET endpoints.
+    // Two chained filters demonstrate AND semantics:
+    //   filter 1 — must be available
+    //   filter 2 — must have stock > 0  (belt-and-suspenders: IsAvailable is already set to false when Stock hits 0)
     options.Entity<Product>("products")
-        .ExposePagedResult();
+        .ExposePagedResult()
+        .WithQueryFilter(p => p.IsAvailable)
+        .WithQueryFilter(p => p.Stock > 0);
 
+    // Hide cancelled orders from the public listing.
+    // Single filter with a compound condition: not cancelled AND not pending.
+    // Only active, confirmed, shipped, or delivered orders are visible.
     options.Entity<Order>("orders")
         .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post)
         .ExposePagedResult()
+        .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
         .BeforeSave(new OrderBeforeSaveHandler())
         .AfterSave(new OrderAfterSaveHandler());
 });
