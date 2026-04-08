@@ -215,9 +215,28 @@ public class OtterApiRestController(
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for DELETE operations");
 
-        var entity = await otterApiRouteInfo.Entity.FindByIdAsync(
-            dbContext,
-            OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+        var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
+
+        object? entity;
+
+        // Fast path: no query filters → FindAsync (uses EF identity cache, one round-trip)
+        if (otterApiRouteInfo.Entity.QueryFilters.Count == 0
+            && otterApiRouteInfo.Entity.ScopedQueryFilterFactories.Count == 0)
+        {
+            entity = await otterApiRouteInfo.Entity.FindByIdAsync(dbContext, idValue);
+        }
+        else
+        {
+            // Query filters present → apply them so a record hidden by a filter (e.g. another
+            // tenant's row) is treated as non-existent and cannot be deleted.
+            // GetDbSet returns a tracking IQueryable, so the loaded entity is tracked and
+            // dbContext.Remove() works without an extra round-trip.
+            var filteredSet = otterApiRouteInfo.Entity.GetDbSet(dbContext);
+            filteredSet = ApplyQueryFilters(filteredSet, otterApiRouteInfo.Entity);
+            filteredSet = ApplyScopedQueryFilters(filteredSet, otterApiRouteInfo.Entity);
+            filteredSet = otterApiRouteInfo.Entity.WhereId(filteredSet, idValue);
+            entity = (await otterApiRouteInfo.Entity.ToListAsync(filteredSet, ct)).FirstOrDefault();
+        }
 
         if (entity == null)
             return new NotFoundObjectResult(null);
