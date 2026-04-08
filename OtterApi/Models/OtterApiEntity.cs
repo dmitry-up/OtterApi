@@ -94,4 +94,22 @@ public class OtterApiEntity
     /// Compiled at startup via Expression Tree — no reflection overhead per request.
     /// </summary>
     public Func<DbContext, IQueryable> GetDbSet { get; set; } = null!;
+
+    /// <summary>
+    /// Materializes an untyped IQueryable to <c>List&lt;object&gt;</c> via EF Core's ToListAsync.
+    /// Compiled at startup from T — avoids reflection and Dynamic.Core per request.
+    /// </summary>
+    public Func<IQueryable, CancellationToken, Task<List<object>>> ToListAsync { get; set; } = null!;
+
+    /// <summary>
+    /// Filters the IQueryable to rows where the primary key equals the supplied (already-converted) id value.
+    /// Compiled at startup from T — builds a typed Expression Tree on each call, no string parsing.
+    /// </summary>
+    public Func<IQueryable, object, IQueryable> WhereId { get; set; } = null!;
+
+    /// <summary>
+    /// Applies ORDER BY Id DESC to the IQueryable.
+    /// Compiled at startup from T — no reflection or string parsing per request.
+    /// </summary>
+    public Func<IQueryable, IQueryable> OrderByIdDesc { get; set; } = null!;
 }

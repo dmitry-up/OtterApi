@@ -302,8 +302,7 @@ public class ControllerCustomRouteIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = RouteFor(entity, "active");
-        route.FilterExpression = "TenantId == @0";
-        route.FilterValues     = [1];
+        route.FilterApply = q => ((IQueryable<TestItem>)q).Where(i => i.TenantId == 1);
 
         var items = Items(await ctrl.GetAsync(route));
 
@@ -321,7 +320,7 @@ public class ControllerCustomRouteIntegrationTests : IDisposable
             sort:   "Name desc");
 
         var route = RouteFor(entity, "active");
-        route.SortExpression = "Name asc";   // overrides route sort
+        route.SortApply = q => ((IQueryable<TestItem>)q).OrderBy(i => i.Name);   // overrides route sort
 
         var names = Items(await BuildController(entity).GetAsync(route))
             .Select(i => i.Name).ToList();

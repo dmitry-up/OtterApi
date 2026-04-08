@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Linq.Expressions;
+using System.Reflection;
 using OtterApi.Expressions;
 using Xunit;
 
@@ -18,6 +19,12 @@ public class FilterOperatorExpressionRegressionTests
         public string Name { get; set; } = string.Empty;
     }
 
+    private static List<T> Apply<T>(LambdaExpression predicate, IEnumerable<T> data)
+    {
+        var typedLambda = (Expression<Func<T, bool>>)predicate;
+        return data.AsQueryable().Where(typedLambda).ToList();
+    }
+
     // ── Bug A: "in"/"nin" detection was case-sensitive ────────────────────────
     // IsOperatorSuported accepts "IN"/"NIN" (case-insensitive), but the internal
     // Contains check was case-sensitive, causing "[1,2,3]" to be treated as a
@@ -27,42 +34,52 @@ public class FilterOperatorExpressionRegressionTests
     [InlineData("IN")]
     [InlineData("In")]
     [InlineData("iN")]
-    public void Build_In_CaseInsensitive_DeserializesJsonArray(string op)
+    public void Build_In_CaseInsensitive_FiltersCorrectly(string op)
     {
-        var prop   = Prop<Stub>("Age");
-        var result = new OtterApiFilterOperatorExpression(prop, "[1,2,3]", 0, op).Build();
+        var prop    = Prop<Stub>("Age");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[1,2,3]", op).Build();
 
-        Assert.Contains("Contains", result.Filter);
-        var list = result.Values[0] as List<int>;
-        Assert.NotNull(list);
-        Assert.Equal([1, 2, 3], list);
+        Assert.NotNull(result.Predicate);
+
+        var data    = new[] { new Stub { Age = 1 }, new Stub { Age = 4 }, new Stub { Age = 2 } };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Equal(2, matched.Count);
+        Assert.All(matched, s => Assert.Contains(s.Age, new[] { 1, 2, 3 }));
     }
 
     [Theory]
     [InlineData("NIN")]
     [InlineData("Nin")]
     [InlineData("nIn")]
-    public void Build_Nin_CaseInsensitive_DeserializesJsonArray(string op)
+    public void Build_Nin_CaseInsensitive_FiltersCorrectly(string op)
     {
-        var prop   = Prop<Stub>("Name");
-        var result = new OtterApiFilterOperatorExpression(prop, "[\"a\",\"b\"]", 0, op).Build();
+        var prop    = Prop<Stub>("Name");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[\"a\",\"b\"]", op).Build();
 
-        Assert.Contains("Contains", result.Filter);
-        var list = result.Values[0] as List<string>;
-        Assert.NotNull(list);
-        Assert.Equal(["a", "b"], list);
+        Assert.NotNull(result.Predicate);
+
+        var data    = new[] { new Stub { Name = "a" }, new Stub { Name = "c" }, new Stub { Name = "b" } };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Single(matched);
+        Assert.Equal("c", matched[0].Name);
     }
 
-    // ── The uppercase-operator filter expression must still use @index ─────────
+    // ── Uppercase "IN" operator builds a valid predicate ─────────────────────
 
     [Fact]
-    public void Build_In_Uppercase_FilterContainsCorrectIndex()
+    public void Build_In_Uppercase_BuildsValidPredicate()
     {
-        var prop   = Prop<Stub>("Age");
-        var result = new OtterApiFilterOperatorExpression(prop, "[10]", 2, "IN").Build();
+        var prop    = Prop<Stub>("Age");
+        var result  = new OtterApiFilterOperatorExpression(prop, "[10]", "IN").Build();
 
-        Assert.Contains("@2", result.Filter);
-        Assert.Equal(3, result.NextIndex);
+        Assert.NotNull(result.Predicate);
+
+        var data    = new[] { new Stub { Age = 10 }, new Stub { Age = 5 } };
+        var matched = Apply<Stub>(result.Predicate!, data);
+
+        Assert.Single(matched);
+        Assert.Equal(10, matched[0].Age);
     }
 }
-

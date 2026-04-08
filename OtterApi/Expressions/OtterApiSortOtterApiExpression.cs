@@ -4,17 +4,15 @@ namespace OtterApi.Expressions;
 
 public class OtterApiSortOtterApiExpression(string propertyName, string sortOrder) : IOtterApiExpression<string>
 {
+    /// <summary>Returns <c>true</c> when the sort direction is descending.</summary>
+    public bool IsDescending => sortOrder.ToLower() switch
+    {
+        "desc" or "1" or "descending" => true,
+        _ => false
+    };
+
     public string Build()
     {
-        switch (sortOrder.ToLower())
-        {
-            case "desc":
-            case "1":
-            case "descending":
-                return $"{propertyName} desc";
-
-            default:
-                return $"{propertyName} asc";
-        }
+        return IsDescending ? $"{propertyName} desc" : $"{propertyName} asc";
     }
 }

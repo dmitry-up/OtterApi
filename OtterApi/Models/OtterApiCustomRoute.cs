@@ -19,10 +19,16 @@ public class OtterApiCustomRoute
     public List<Func<IQueryable, IQueryable>> Filters { get; set; } = [];
 
     /// <summary>
-    /// Optional Dynamic LINQ sort expression applied when no client sort is provided.
-    /// Example: <c>"CreatedAt desc"</c>, <c>"Price asc, Name asc"</c>.
+    /// Optional sort expression (e.g. <c>"CreatedAt desc"</c>) for documentation / debugging.
+    /// The compiled sort is stored in <see cref="SortApply"/>.
     /// </summary>
     public string? Sort { get; set; }
+
+    /// <summary>
+    /// Pre-compiled sort delegate built from <see cref="Sort"/> at entity registration time.
+    /// Applied when no client sort is provided.
+    /// </summary>
+    public Func<IQueryable, IQueryable>? SortApply { get; set; }
 
     /// <summary>
     /// Maximum number of rows to return. 0 means no built-in limit

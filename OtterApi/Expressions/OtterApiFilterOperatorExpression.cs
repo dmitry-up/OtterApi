@@ -1,38 +1,62 @@
-﻿using System.Reflection;
+﻿using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.Json;
 using OtterApi.Configs;
 using OtterApi.Converters;
+using OtterApi.Interfaces;
 using OtterApi.Models;
 
 namespace OtterApi.Expressions;
 
-public class OtterApiFilterOperatorExpression(PropertyInfo property, string value, int index, string comparisonOperator)
+public class OtterApiFilterOperatorExpression(PropertyInfo property, string value, string comparisonOperator)
+    : IOtterApiExpression<OtterApiFilterResult>
 {
+    private static readonly MethodInfo StringContains =
+        typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+
     public OtterApiFilterResult Build()
     {
         if (!property.PropertyType.IsOperatorSuported(comparisonOperator))
-        {
-            throw new NotSupportedException($"Operator {comparisonOperator} is not suported for {property.PropertyType.Name}");
-        }
+            throw new NotSupportedException(
+                $"Operator {comparisonOperator} is not suported for {property.PropertyType.Name}");
 
-        object list = null;
+        var entityType = property.ReflectedType ?? property.DeclaringType!;
+        var type       = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        var param      = Expression.Parameter(entityType, "x");
+        var propExpr   = Expression.Property(param, property);
 
+        // ── in / nin: value is a JSON array ──────────────────────────────────
         if (new[] { "in", "nin" }.Contains(comparisonOperator, StringComparer.OrdinalIgnoreCase))
         {
-            var listType = typeof(List<>).MakeGenericType(property.PropertyType);
-
-            list = JsonSerializer.Deserialize(value, listType);
+            var listType  = typeof(List<>).MakeGenericType(property.PropertyType);
+            var list      = JsonSerializer.Deserialize(value, listType)!;
+            var listConst = Expression.Constant(list, listType);
+            var containsM = listType.GetMethod("Contains", [property.PropertyType])!;
+            var call      = Expression.Call(listConst, containsM, propExpr);
+            Expression body = comparisonOperator.Equals("nin", StringComparison.OrdinalIgnoreCase)
+                ? Expression.Not(call) : call;
+            return new OtterApiFilterResult { Predicate = Expression.Lambda(body, param) };
         }
 
-        var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        // ── Scalar operators ──────────────────────────────────────────────────
+        var converted = OtterApiTypeConverter.ChangeType(value, type);
+        var constExpr = OtterApiFilterOtterApiExpression.BuildConstant(converted, property.PropertyType);
+        var opName    = comparisonOperator.ToLowerInvariant();
 
-        return new OtterApiFilterResult
+        Expression pred = opName switch
         {
-            Filter = OtterApiConfiguration.Operators
-                .Where(x => x.Name.Equals(comparisonOperator, StringComparison.InvariantCultureIgnoreCase)).First().Expression
-                .Replace("{propertyName}", property.Name).Replace("{index}", index.ToString()),
-            Values = [list ?? OtterApiTypeConverter.ChangeType(value, type)],
-            NextIndex = index + 1
+            "eq"    => Expression.Equal(propExpr, constExpr),
+            "neq"   => Expression.NotEqual(propExpr, constExpr),
+            "lt"    => Expression.LessThan(propExpr, constExpr),
+            "lteq"  => Expression.LessThanOrEqual(propExpr, constExpr),
+            "gt"    => Expression.GreaterThan(propExpr, constExpr),
+            "gteq"  => Expression.GreaterThanOrEqual(propExpr, constExpr),
+            "like"  => Expression.Call(propExpr, StringContains, constExpr),
+            "nlike" => Expression.Not(Expression.Call(propExpr, StringContains, constExpr)),
+            _       => throw new NotSupportedException(
+                           $"Operator {comparisonOperator} is not suported for {property.PropertyType.Name}")
         };
+
+        return new OtterApiFilterResult { Predicate = Expression.Lambda(pred, param) };
     }
 }

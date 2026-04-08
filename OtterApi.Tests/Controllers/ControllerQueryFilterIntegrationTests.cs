@@ -127,8 +127,7 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.FilterExpression = "TenantId == @0";
-        route.FilterValues     = [1];
+        route.FilterApply = q => ((IQueryable<TestItem>)q).Where(i => i.TenantId == 1);
 
         var items = Items(await ctrl.GetAsync(route));
 
@@ -542,7 +541,7 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.SortExpression = "Name asc";
+        route.SortApply = q => ((IQueryable<TestItem>)q).OrderBy(i => i.Name);
 
         var names = Items(await ctrl.GetAsync(route)).Select(i => i.Name).ToList();
 
@@ -557,9 +556,9 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.SortExpression = "Id asc";
-        route.Skip           = 1;
-        route.Take           = 2;
+        route.SortApply = q => ((IQueryable<TestItem>)q).OrderBy(i => i.Id);
+        route.Skip      = 1;
+        route.Take      = 2;
 
         var ids = Items(await ctrl.GetAsync(route)).Select(i => i.Id).ToList();
 

@@ -76,11 +76,8 @@ public class OtterApiRequestProcessor(
         {
             var expressionBuilder = new OtterApiExpressionBuilder(request.Query, apiEntity);
 
-            var filterResult = expressionBuilder.BuildFilterResult();
-            result.FilterExpression = filterResult.Filter;
-            result.FilterValues = filterResult.Values;
-
-            result.SortExpression = expressionBuilder.BuildSortResult();
+            result.FilterApply = expressionBuilder.BuildFilterResult();
+            result.SortApply   = expressionBuilder.BuildSortResult();
 
             var pageResult = expressionBuilder.BuildPagingResult();
             result.Take = pageResult.Take;
