@@ -6,7 +6,7 @@
 [![.NET](https://img.shields.io/badge/.NET-8.0-blue)](https://dotnet.microsoft.com/)
 
 
-**OtterApi** is an ASP.NET Core library that automatically generates a full REST API on top of your EF Core models. Register your entities once — and GET / POST / PUT / DELETE routes, filtering, sorting, pagination, authorization, and Swagger documentation are all available without writing a single controller or repository.
+**OtterApi** is an ASP.NET Core library that automatically generates a full REST API on top of your EF Core models. Register your entities once — and GET / POST / PUT / PATCH / DELETE routes, filtering, sorting, pagination, authorization, and Swagger documentation are all available without writing a single controller or repository.
 
 ---
 
@@ -20,6 +20,8 @@
   - [JsonSerializerOptions](#jsonserializeroptions)
 - [Entity Registration](#entity-registration)
 - [Server-Side Query Filters](#server-side-query-filters)
+  - [Static Query Filters](#static-query-filters)
+  - [Scoped Query Filters (per-request)](#scoped-query-filters-per-request)
 - [Custom Named Routes](#custom-named-routes)
 - [Authorization](#authorization)
 - [REST API — Endpoint Reference](#rest-api--endpoint-reference)
@@ -35,7 +37,8 @@
 - [BeforeSave / AfterSave Hooks](#beforesave--aftersave-hooks)
   - [Lambda Approach](#lambda-approach)
   - [Handler Approach (Interface)](#handler-approach-interface)
-- [Error Handling — OtterApiException](#error-handling--OtterApiexception)
+  - [Chaining Multiple Hooks](#chaining-multiple-hooks)
+- [Error Handling — OtterApiException](#error-handling--otterApiexception)
 - [Keyless Entities](#keyless-entities)
 - [Swagger](#swagger)
 - [Full Integration Example](#full-integration-example)
@@ -82,6 +85,7 @@ GET    /api/products
 GET    /api/products/{id}
 POST   /api/products
 PUT    /api/products/{id}
+PATCH  /api/products/{id}
 DELETE /api/products/{id}
 GET    /api/products/count
 GET    /api/products/pagedresult   (if enabled)
@@ -152,10 +156,12 @@ options.Entity<TEntity>(route)
     .WithGetPolicy(string policy)
     .WithPostPolicy(string policy)
     .WithPutPolicy(string policy)
+    .WithPatchPolicy(string policy)
     .WithDeletePolicy(string policy)
     .Allow(OtterApiCrudOperation operations)
     .ExposePagedResult(bool expose = true)
-    .WithQueryFilter(Expression<Func<T, bool>> predicate)  // server-side row filter
+    .WithQueryFilter(Expression<Func<T, bool>> predicate)         // static server-side row filter
+    .WithScopedQueryFilter(Func<IServiceProvider, Expression<Func<T, bool>>> factory)  // per-request filter
     .WithCustomRoute("slug", ...)   // named preset GET route (see below)
     .BeforeSave(...)
     .AfterSave(...);
@@ -182,9 +188,24 @@ options.Entity<Product>("products")
 
 ## Server-Side Query Filters
 
-`.WithQueryFilter(predicate)` registers a permanent, server-side row filter for an entity. The predicate is applied to **every** GET request — list, by-Id, count, pagedresult — before any client-supplied filters, sorting, or pagination.
+OtterApi supports two types of server-side row filters. Both are applied to **every** GET request
+(list, by-Id, count, pagedresult, custom routes) **before** any client-supplied parameters.
 
-### Basic Usage
+| Type | Method | When the predicate is evaluated |
+|---|---|---|
+| Static | `.WithQueryFilter(predicate)` | Compiled once at startup — constant values only |
+| Scoped | `.WithScopedQueryFilter(factory)` | Resolved on every request — can read from HTTP context |
+
+Multiple filters of either type can be chained. All are composed with **AND semantics**.
+
+---
+
+### Static Query Filters
+
+`.WithQueryFilter(predicate)` registers a permanent, server-side row filter.
+The predicate must use only **EF-translatable operations** and cannot reference request-scoped data.
+
+#### Basic Usage
 
 ```csharp
 // Only expose available products — unavailable ones are completely invisible
@@ -205,7 +226,7 @@ After this:
 
 > The filter is applied transparently at the SQL/in-memory query level. A record that exists in the database but does not pass the filter behaves exactly as if it does not exist.
 
-### Chaining Multiple Filters (AND semantics)
+#### Chaining Multiple Filters (AND semantics)
 
 Each `.WithQueryFilter()` call adds another predicate. All predicates are chained — a row must satisfy **all** of them to be visible.
 
@@ -216,9 +237,7 @@ options.Entity<Product>("products")
     .WithQueryFilter(p => p.Stock > 0);
 ```
 
-### Compound Conditions in a Single Filter
-
-You can use `&&` and `||` inside a single predicate:
+#### Compound Conditions in a Single Filter
 
 ```csharp
 // Hide cancelled and pending orders in one predicate
@@ -230,9 +249,10 @@ options.Entity<Report>("reports")
     .WithQueryFilter(r => r.TenantId == 1 || r.TenantId == 2);
 ```
 
-### Combining with Client Filters
+#### Combining with Client Filters
 
-Server-side query filters and client-supplied `filter[...]` parameters are composed with AND. The server filter is applied first:
+Server-side query filters and client-supplied `filter[...]` parameters are composed with AND.
+The server filter is applied first:
 
 ```http
 # Server filter: IsAvailable == true
@@ -241,12 +261,67 @@ Server-side query filters and client-supplied `filter[...]` parameters are compo
 GET /api/products?filter[categoryId]=1
 ```
 
-### Limitations
+#### Limitations
 
 - The predicate must use only **EF-translatable operations** (field comparisons, `&&`, `||`, `!`, constants). Calling arbitrary C# methods that cannot be converted to SQL will throw at runtime.
-- The predicate is compiled **once at startup** — it cannot reference request-scoped data such as the current user Id or a value from the HTTP headers. For dynamic, per-request filtering use a `BeforeSave` hook or a custom middleware.
+- The predicate is compiled **once at startup** — it cannot reference request-scoped data such as the current user Id or a value from HTTP headers. Use `.WithScopedQueryFilter()` for dynamic, per-request filtering.
 
 ---
+
+### Scoped Query Filters (per-request)
+
+`.WithScopedQueryFilter(factory)` registers a dynamic filter whose predicate is resolved on every
+request via `IServiceProvider`. Use this when the filter depends on runtime data — the current user
+Id, tenant Id from a JWT token, or any other HTTP context value.
+
+> **Requires** `services.AddHttpContextAccessor()` if you read from `IHttpContextAccessor`.
+
+#### Usage
+
+```csharp
+// Each user sees only their own orders (userId from the JWT token)
+options.Entity<Order>("orders")
+    .WithScopedQueryFilter(sp =>
+    {
+        var http   = sp.GetRequiredService<IHttpContextAccessor>();
+        var userId = http.HttpContext?.User.FindFirst("sub")?.Value ?? "";
+        return o => o.UserId == userId;
+    });
+```
+
+```csharp
+// Multi-tenant: each request sees only its own tenant's data
+options.Entity<Product>("products")
+    .WithScopedQueryFilter(sp =>
+    {
+        var http     = sp.GetRequiredService<IHttpContextAccessor>();
+        var tenantId = int.Parse(http.HttpContext?.User.FindFirst("tenantId")?.Value ?? "0");
+        return p => p.TenantId == tenantId;
+    });
+```
+
+#### Chaining with Static Filters
+
+Static and scoped filters can be freely combined. All are composed with **AND semantics**:
+
+```csharp
+options.Entity<Product>("products")
+    .WithQueryFilter(p => p.IsActive)              // static: always applied
+    .WithScopedQueryFilter(sp =>                   // dynamic: per-request
+    {
+        var http     = sp.GetRequiredService<IHttpContextAccessor>();
+        var tenantId = int.Parse(http.HttpContext!.User.FindFirst("tenantId")!.Value);
+        return p => p.TenantId == tenantId;
+    });
+```
+
+#### Behaviour When No IServiceProvider Is Available
+
+If the controller is created without a service provider (e.g. directly in unit tests), scoped filters
+are silently skipped — all records are returned as if no scoped filter existed.
+
+---
+
 
 ## Custom Named Routes
 
@@ -354,10 +429,11 @@ services.AddAuthorization(options =>
 | Method | Description |
 |---|---|
 | `.Authorize()` | Requires authentication for all HTTP methods |
-| `.WithEntityPolicy("IsAdmin")` | Applies a policy to all methods (GET/POST/PUT/DELETE) |
+| `.WithEntityPolicy("IsAdmin")` | Applies a policy to all methods (GET/POST/PUT/PATCH/DELETE) |
 | `.WithGetPolicy("IsManager")` | Policy for GET only |
 | `.WithPostPolicy("IsAdmin")` | Policy for POST only |
 | `.WithPutPolicy("IsAdmin")` | Policy for PUT only |
+| `.WithPatchPolicy("IsAdmin")` | Policy for PATCH only |
 | `.WithDeletePolicy("IsAdmin")` | Policy for DELETE only |
 
 Policies can be combined: `EntityPolicy` is checked first, then the method-specific policy.
@@ -366,6 +442,7 @@ Policies can be combined: `EntityPolicy` is checked first, then the method-speci
 options.Entity<Product>("products")
     .Authorize()                        // any authenticated user
     .WithEntityPolicy("IsManager")      // ... who also has the Manager role
+    .WithPatchPolicy("IsManager")       // PATCH requires Manager role
     .WithDeletePolicy("IsAdmin");       // DELETE requires Admin role
 ```
 
@@ -520,6 +597,33 @@ DELETE /api/products/4
 
 ---
 
+### PATCH /api/products/{id}
+
+Partially updates an existing record using **RFC 7396 JSON Merge Patch** semantics.  
+Only the fields present in the request body are updated. Omitted fields are left unchanged.  
+Navigation properties and unknown fields are silently ignored.
+
+```http
+PATCH /api/products/4
+Content-Type: application/merge-patch+json
+
+{
+  "price": 149.99,
+  "stock": 15
+}
+```
+
+The example above updates only `price` and `stock`. All other fields (`name`, `isActive`, `categoryId`, etc.) retain their original database values.
+
+**Responses:**
+- `200 OK` — full updated object in the response body
+- `400 Bad Request` — Id missing from URL, or validation errors on the patched entity
+- `404 Not Found` — record does not exist (or is hidden by a server-side query filter)
+
+> **Note.** Enum fields accept both integers (`0`) and strings (`"Pending"`) in the patch body — deserialization is case-insensitive.
+
+---
+
 ### GET /api/products/count
 
 Returns the total number of records, respecting any filters passed as query parameters.
@@ -589,7 +693,7 @@ Syntax: `filter[propertyName][operator]=value`
 | `nin` | string, value types, Guid | Value is not in a JSON array | `filter[status][nin]=["pending","discontinued"]` |
 
 ```http
-GET /api/products?filter[price][gteq]=50&filter[price][lteq]=500
+GET /api/products?filter[price][gteq]=50&filter[price][lteq]=100
 GET /api/products?filter[name][like]=book
 GET /api/products?filter[categoryId][in]=[1,2,5]
 GET /api/products?filter[status][nin]=["pending","discontinued"]
@@ -698,6 +802,8 @@ GET /api/products?filter[name][like]=laptop&filter[name][like]=keyboard&operator
 
 Hooks let you execute arbitrary logic **before** or **after** an entity is saved to the database.
 
+Multiple `.BeforeSave()` and `.AfterSave()` calls can be chained on the same entity — all registered handlers run in registration order. See [Chaining Multiple Hooks](#chaining-multiple-hooks).
+
 ### Signature
 
 ```
@@ -707,9 +813,9 @@ Hooks let you execute arbitrary logic **before** or **after** an entity is saved
 | Parameter | Description |
 |---|---|
 | `context` | The current DbContext instance |
-| `newEntity` | Incoming data for `BeforeSave`; saved data for `AfterSave` |
+| `newEntity` | Incoming data for `BeforeSave`; saved/patched data for `AfterSave` |
 | `originalEntity` | The database state before the change. `null` for `POST`. For `DELETE`, equals `newEntity`. |
-| `operation` | `OtterApiCrudOperation.Post`, `.Put`, or `.Delete` |
+| `operation` | `OtterApiCrudOperation.Post`, `.Put`, `.Patch`, or `.Delete` |
 
 ### `OtterApiCrudOperation`
 
@@ -879,28 +985,31 @@ public class ProductAfterSaveHandler : IOtterApiAfterSaveHandler<Product>
 
 #### Registering Handlers
 
-Pass a handler instance directly to the builder method. If your handler requires DI dependencies, resolve or construct it before calling `AddOtterApi`:
+Pass a handler instance directly to the builder method. Multiple handlers can be registered on the same entity by chaining `.BeforeSave()` / `.AfterSave()` calls — they all run in registration order.
 
 ```csharp
-// Option 1 — construct the handler manually
-var beforeHandler = new ProductBeforeSaveHandler(logger);
-var afterHandler  = new ProductAfterSaveHandler(eventBus);
-
+// Single handler per operation
 services.AddOtterApi<AppDbContext>(options =>
 {
     options.Path = "/api";
     options.Entity<Product>("products")
-        .BeforeSave(beforeHandler)
-        .AfterSave(afterHandler);
+        .BeforeSave(new ProductBeforeSaveHandler(logger))
+        .AfterSave(new ProductAfterSaveHandler(eventBus));
 });
 
-// Option 2 — mix handlers and lambdas across different entities
+// Chained: both BeforeSave handlers run in order before SaveChangesAsync
 services.AddOtterApi<AppDbContext>(options =>
 {
     options.Path = "/api";
 
     options.Entity<Product>("products")
         .BeforeSave(new ProductBeforeSaveHandler(loggerFactory.CreateLogger<ProductBeforeSaveHandler>()))
+        .BeforeSave((ctx, product, _, op) =>
+        {
+            // runs after ProductBeforeSaveHandler
+            if (op == OtterApiCrudOperation.Post)
+                product.Slug = product.Name.ToLowerInvariant().Replace(" ", "-");
+        })
         .AfterSave(new ProductAfterSaveHandler(eventBus));
 
     options.Entity<Category>("categories")
@@ -913,6 +1022,41 @@ services.AddOtterApi<AppDbContext>(options =>
 ```
 
 > **Important.** Hooks are registered once at application startup. If your handler requires scoped dependencies (e.g. another DbContext, HTTP client, etc.), use the lambda approach and resolve dependencies through the provided `DbContext` or a scope factory.
+
+---
+
+### Chaining Multiple Hooks
+
+Best for combining simple inline logic with dependency-injected services, or for separating concerns into dedicated classes.
+
+```csharp
+options.Entity<Order>("orders")
+    // BeforeSave chain — both run before SaveChangesAsync
+    .BeforeSave((ctx, order, _, op) =>
+    {
+        if (op == OtterApiCrudOperation.Post)
+            order.CreatedAt = DateTime.UtcNow;
+    })
+    .BeforeSave(new OrderValidationHandler())   // runs second
+
+    // AfterSave chain — both run after SaveChangesAsync
+    .AfterSave(new OrderAuditHandler())         // runs first
+    .AfterSave((_, order, _, op) =>
+    {
+        if (op == OtterApiCrudOperation.Post)
+            Console.WriteLine($"[Audit] New order #{order.Id}");
+    });
+```
+
+The second `BeforeSave` handler receives the entity in the **state left by the first handler** — mutations from earlier handlers are visible to later ones.
+
+Order of execution for every mutating request:
+
+```
+BeforeSave[0] → BeforeSave[1] → ... → SaveChangesAsync → AfterSave[0] → AfterSave[1] → ...
+```
+
+Lambdas and interface-based handlers can be freely mixed in the same chain.
 
 ---
 
@@ -946,7 +1090,16 @@ Content-Type: application/json
 | `message` | `string` | Human-readable error message |
 | `statusCode` | `int` | HTTP status code (default: `400`) |
 
+### Built-in error codes
+
+OtterApi itself throws `OtterApiException` in the following situations:
+
+| Code | Status | When |
+|---|---|---|
+| `INVALID_FILTER_OPERATOR` | `400` | Client uses an operator not supported for the property type (e.g. `filter[price][like]=foo`) |
+
 ---
+
 
 ## Keyless Entities
 
@@ -1091,6 +1244,7 @@ builder.Services.AddOtterApi<AppDbContext>(options =>
         .Authorize()
         .WithPostPolicy("IsManager")
         .WithPutPolicy("IsManager")
+        .WithPatchPolicy("IsManager")
         .WithDeletePolicy("IsAdmin")
         .ExposePagedResult()
         .WithQueryFilter(p => p.IsActive)
@@ -1106,7 +1260,8 @@ builder.Services.AddOtterApi<AppDbContext>(options =>
                     throw new OtterApiException("INVALID_CATEGORY", "The specified category was not found.", 404);
             }
 
-            if (op == OtterApiCrudOperation.Put && original != null && original.Price != product.Price)
+            if ((op == OtterApiCrudOperation.Put || op == OtterApiCrudOperation.Patch)
+                && original != null && original.Price != product.Price)
             {
                 // log price change
             }
@@ -1160,11 +1315,17 @@ Authorization: Bearer <token>
 Content-Type: application/json
 { "name": "Widget", "price": 9.99, "stock": 100, "isActive": true, "status": 0, "categoryId": 1 }
 
-# Update a product
+# Fully update a product (requires Manager role)
 PUT /api/v1/products/7
 Authorization: Bearer <token>
 Content-Type: application/json
 { "id": 7, "name": "Widget Pro", "price": 14.99, "stock": 80, "isActive": true, "status": 1, "categoryId": 1 }
+
+# Partially update a product — only price and stock (requires Manager role)
+PATCH /api/v1/products/7
+Authorization: Bearer <token>
+Content-Type: application/merge-patch+json
+{ "price": 19.99, "stock": 60 }
 
 # Delete a product (requires Admin role)
 DELETE /api/v1/products/7
@@ -1181,19 +1342,19 @@ Authorization: Bearer <token>
 | **EF Core `DbSet`** | The entity must be registered as `DbSet<T>` in the provided `DbContext`. If it is not, an `InvalidOperationException` is thrown at startup. |
 | **Filterable property types** | Supported: primitives, `string`, `Guid`, `DateTime`, `DateTimeOffset`, `enum`, and nullable variants. Objects and collections cannot be used as filter fields. |
 | **`include` depth** | Only navigation properties declared directly on the entity are loaded. Nested includes (deeper than one level) are not supported. Unknown property names in `include` are silently ignored. |
-| **One hook per entity** | Only one `BeforeSave` and one `AfterSave` can be registered per entity. Calling `.BeforeSave()` a second time overwrites the first. |
 | **Hooks and DI** | Hooks are registered once at startup. Scoped dependencies must be resolved manually through the provided `DbContext` or a service scope factory. |
 | **Keyless entities** | `GET` only (list + filter). POST, PUT, PATCH, and DELETE throw an exception. |
-| **`operator=or` is global** | The `operator=or` parameter switches the join logic for **all** client-supplied filters in the request. Mixing AND and OR for different fields in a single query is not supported. |
+| **`operator=or` is global (flat syntax)** | The flat `operator=or` parameter switches the join logic for **all** filters in the request. For mixed AND/OR logic on different fields, use [grouped filter syntax](#compound-filters-and--or) instead. |
 | **Validation** | OtterApi validates Data Annotations (`[Required]`, `[MaxLength]`, etc.) using the standard `IObjectModelValidator`. Invalid requests return `400 Bad Request` with the model state. |
 | **Enum serialization** | Enums are **serialized as integers** in all responses. Enums are deserialized case-insensitively as both strings (`"Pending"`) and integers (`0`) in request bodies. Swagger schemas include `x-enumNames` and a `description` mapping integers to names (e.g. `0 = Pending, 1 = Active`). |
-| **Filter operator names** | Operator names (`eq`, `like`, `in`, etc.) are case-insensitive in the URL. |
-| **PUT / DELETE without Id** | `PUT /api/products` and `DELETE /api/products` (without an Id segment) return `400 Bad Request`. The Id must always be part of the URL path. |
+| **Filter operator names** | Operator names (`eq`, `like`, `in`, etc.) are case-insensitive in the URL. Passing an unsupported operator for a given type returns `400 Bad Request` with code `INVALID_FILTER_OPERATOR`. |
+| **PUT / DELETE / PATCH without Id** | `PUT`, `PATCH`, and `DELETE` without an Id segment in the URL return `400 Bad Request`. The Id must always be part of the URL path. |
 | **Trailing slash** | A trailing slash (e.g. `/api/products/`) is treated as a collection request, identical to `/api/products`. |
-| **`.Allow()` and HTTP methods** | Requests for a method not included in `AllowedOperations` return `405 Method Not Allowed`. The default allows all methods. |
+| **`.Allow()` and HTTP methods** | Requests for a method not included in `AllowedOperations` return `405 Method Not Allowed`. The default allows all methods (GET, POST, PUT, PATCH, DELETE). |
 | **Middleware order** | `UseOtterApi()` must be placed **after** `UseAuthentication()` / `UseAuthorization()` and **before** `UseEndpoints()` / `MapControllers()`. |
 | **`WithQueryFilter` — EF-translatable only** | Predicates passed to `.WithQueryFilter()` must be expressible in SQL (field comparisons, `&&`, `\|\|`, constants). Arbitrary C# logic that cannot be converted to a query will throw at runtime. |
-| **`WithQueryFilter` — static only** | Predicates are compiled once at application startup. They cannot reference request-scoped data (current user, HTTP headers, etc.). For dynamic per-request filtering, use a `BeforeSave` hook or a custom middleware instead. |
+| **`WithQueryFilter` — static only** | Predicates are compiled once at application startup. They cannot reference request-scoped data (current user, HTTP headers, etc.). Use `.WithScopedQueryFilter()` for dynamic per-request filtering. |
+| **`WithScopedQueryFilter` — EF-translatable only** | The predicate returned by the factory must still be EF-translatable. The factory itself can use any C# logic to build or select the predicate. |
 | **`WithCustomRoute` — reserved slugs** | The slugs `count` and `pagedresult` are reserved and throw `InvalidOperationException` at startup if used. |
 | **`WithCustomRoute` — unique slugs** | Each slug must be unique per entity. Duplicate slugs throw `InvalidOperationException` at startup. |
 | **`WithCustomRoute` — GET only** | Custom routes are read-only GET endpoints. POST, PUT, PATCH, and DELETE are not supported on custom route paths. |

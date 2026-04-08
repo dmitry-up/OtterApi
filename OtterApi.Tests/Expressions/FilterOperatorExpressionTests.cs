@@ -1,5 +1,6 @@
 ﻿using System.Linq.Expressions;
 using System.Reflection;
+using OtterApi.Exceptions;
 using OtterApi.Expressions;
 using Xunit;
 
@@ -175,32 +176,40 @@ public class FilterOperatorExpressionTests
     public void Build_Like_OnInt_ThrowsNotSupported()
     {
         var prop = Prop<Stub>("Age");
-        Assert.Throws<NotSupportedException>(
+        var ex = Assert.Throws<OtterApiException>(
             () => new OtterApiFilterOperatorExpression(prop, "5", "like").Build());
+        Assert.Equal("INVALID_FILTER_OPERATOR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
     public void Build_Lt_OnString_ThrowsNotSupported()
     {
         var prop = Prop<Stub>("Name");
-        Assert.Throws<NotSupportedException>(
+        var ex = Assert.Throws<OtterApiException>(
             () => new OtterApiFilterOperatorExpression(prop, "x", "lt").Build());
+        Assert.Equal("INVALID_FILTER_OPERATOR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
     public void Build_Lt_OnGuid_ThrowsNotSupported()
     {
         var prop = Prop<Stub>("Token");
-        Assert.Throws<NotSupportedException>(
+        var ex = Assert.Throws<OtterApiException>(
             () => new OtterApiFilterOperatorExpression(prop, Guid.NewGuid().ToString(), "lt").Build());
+        Assert.Equal("INVALID_FILTER_OPERATOR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
     }
 
     [Fact]
     public void Build_Like_OnGuid_ThrowsNotSupported()
     {
         var prop = Prop<Stub>("Token");
-        Assert.Throws<NotSupportedException>(
+        var ex = Assert.Throws<OtterApiException>(
             () => new OtterApiFilterOperatorExpression(prop, "abc", "like").Build());
+        Assert.Equal("INVALID_FILTER_OPERATOR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
     }
 
     // ── Unknown operator throws ───────────────────────────────────────────────
@@ -209,8 +218,10 @@ public class FilterOperatorExpressionTests
     public void Build_UnknownOperator_ThrowsNotSupported()
     {
         var prop = Prop<Stub>("Age");
-        Assert.Throws<NotSupportedException>(
+        var ex = Assert.Throws<OtterApiException>(
             () => new OtterApiFilterOperatorExpression(prop, "5", "between").Build());
+        Assert.Equal("INVALID_FILTER_OPERATOR", ex.Code);
+        Assert.Equal(400, ex.StatusCode);
     }
 
     // ── Nullable value types ──────────────────────────────────────────────────
