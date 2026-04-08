@@ -98,11 +98,11 @@ public class OtterApiRestController(
             return GetOkObjectResult(await GetPagedResultAsync(otterApiRouteInfo.Entity, dbSet, page, pageSize, ct));
         }
 
-        if (otterApiRouteInfo.Take != 0)
-        {
-            var take = ClampPageSize(otterApiRouteInfo.Take);
-            dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, otterApiRouteInfo.Skip), take);
-        }
+        // Apply pagination. When the client provides no ?pagesize, ClampPageSize(0) returns
+        // MaxPageSize (when configured) so unbounded queries against large tables are prevented.
+        var effectiveTake = ClampPageSize(otterApiRouteInfo.Take);
+        if (effectiveTake > 0)
+            dbSet = OtterApiDynamicLinq.Take(OtterApiDynamicLinq.Skip(dbSet, otterApiRouteInfo.Skip), effectiveTake);
 
         return GetOkObjectResult(await otterApiRouteInfo.Entity.ToListAsync(dbSet, ct));
     }
@@ -381,13 +381,21 @@ public class OtterApiRestController(
     }
 
     /// <summary>
-    /// Clamps <paramref name="size"/> to <see cref="OtterApiOptions.MaxPageSize"/> when a limit is configured.
-    /// Returns <paramref name="size"/> unchanged when <c>MaxPageSize == 0</c> (no limit).
+    /// Returns the effective page size to apply on a query.
+    /// <list type="bullet">
+    ///   <item>When <c>MaxPageSize == 0</c> (no server limit): returns <paramref name="size"/> unchanged.</item>
+    ///   <item>When <paramref name="size"/> is 0 (client provided no <c>?pagesize</c>):
+    ///         returns <c>MaxPageSize</c> — prevents unbounded queries against large tables.</item>
+    ///   <item>When <paramref name="size"/> exceeds <c>MaxPageSize</c>: clamps to <c>MaxPageSize</c>.</item>
+    ///   <item>Otherwise: returns <paramref name="size"/> unchanged.</item>
+    /// </list>
     /// </summary>
     private int ClampPageSize(int size)
     {
         var max = registry?.Options.MaxPageSize ?? 0;
-        return (max > 0 && size > max) ? max : size;
+        if (max <= 0) return size;              // no server-side limit configured
+        if (size <= 0 || size > max) return max; // no client limit, or exceeds cap → use MaxPageSize
+        return size;
     }
 
     private OkObjectResult GetOkObjectResult(object result)

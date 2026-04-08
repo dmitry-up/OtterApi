@@ -22,7 +22,9 @@ public class OtterApiPagingOtterApiExpression(IQueryCollection queryString, stri
 
             if (key.ToLower() == prefix)
             {
-                if (uint.TryParse(queryString[key].ToString(), out var parsedPage))
+                // parsedPage == 0 would cause uint underflow in (page - 1U) * pageSize → negative Skip.
+                // Treat page=0 the same as page=1 (first page).
+                if (uint.TryParse(queryString[key].ToString(), out var parsedPage) && parsedPage >= 1)
                     page = parsedPage;
             }
         }
