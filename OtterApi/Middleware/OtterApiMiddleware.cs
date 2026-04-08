@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using OtterApi.Enums;
 using OtterApi.Exceptions;
 using OtterApi.Interfaces;
 using OtterApi.Models;
@@ -31,6 +32,21 @@ public class OtterApiMiddleware(RequestDelegate next)
             var actionContext = new ActionContext(context, new RouteData(), new ActionDescriptor());
             var controller = otterApiRequestProcessor.GetController(actionContext, routeInfo.Entity.DbContextType);
 
+            var requestedOperation = context.Request.Method switch
+            {
+                "GET"    => OtterApiCrudOperation.Get,
+                "POST"   => OtterApiCrudOperation.Post,
+                "PUT"    => OtterApiCrudOperation.Put,
+                "DELETE" => OtterApiCrudOperation.Delete,
+                _        => (OtterApiCrudOperation?)null
+            };
+
+            if (requestedOperation == null || (routeInfo.Entity.AllowedOperations & requestedOperation.Value) == 0)
+            {
+                context.Response.StatusCode = 405;
+                return;
+            }
+
             try
             {
                 switch (context.Request.Method)
@@ -52,10 +68,6 @@ public class OtterApiMiddleware(RequestDelegate next)
                     case "DELETE":
                         result = await controller.DeleteAsync(routeInfo);
                         break;
-
-                    default:
-                        context.Response.StatusCode = 405;
-                        return;
                 }
             }
             catch (OtterApiException ex)

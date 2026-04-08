@@ -34,6 +34,8 @@ public class OtterApiEntity
 
     public bool ExposePagedResult { get; set; }
 
+    public OtterApiCrudOperation AllowedOperations { get; set; } = OtterApiCrudOperation.All;
+
     /// <summary>newEntity = incoming data, originalEntity = current DB state (null for POST)</summary>
     public Func<DbContext, object, object?, OtterApiCrudOperation, Task>? PreSaveHandler { get; set; }
 

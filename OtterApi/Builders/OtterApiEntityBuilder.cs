@@ -20,6 +20,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private Func<DbContext, object, object?, OtterApiCrudOperation, Task>? postSaveHandler;
     private Func<DbContext, object, object?, OtterApiCrudOperation, Task>? preSaveHandler;
     private string? putPolicy;
+    private OtterApiCrudOperation allowedOperations = OtterApiCrudOperation.All;
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -65,6 +66,12 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     public OtterApiEntityBuilder<T> ExposePagedResult(bool expose = true)
     {
         exposePagedResult = expose;
+        return this;
+    }
+
+    public OtterApiEntityBuilder<T> Allow(OtterApiCrudOperation operations)
+    {
+        allowedOperations = operations;
         return this;
     }
 
@@ -135,6 +142,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             EntityType = entityType,
             DbContextType = dbContextType,
             ExposePagedResult = exposePagedResult,
+            AllowedOperations = allowedOperations,
             Properties = entityType.GetProperties()
                 .Where(x => x.PropertyType.IsTypeSupported()).ToList(),
             NavigationProperties = entityType.GetProperties()
