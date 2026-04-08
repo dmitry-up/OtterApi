@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Linq.Expressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OtterApi.Configs;
@@ -21,6 +22,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private Func<DbContext, object, object?, OtterApiCrudOperation, Task>? preSaveHandler;
     private string? putPolicy;
     private OtterApiCrudOperation allowedOperations = OtterApiCrudOperation.All;
+    private readonly List<Func<IQueryable, IQueryable>> queryFilters = [];
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -72,6 +74,17 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     public OtterApiEntityBuilder<T> Allow(OtterApiCrudOperation operations)
     {
         allowedOperations = operations;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a per-entity query filter applied to every GET request.
+    /// The lambda must use only EF-translatable operations.
+    /// Multiple calls chain filters with AND semantics.
+    /// </summary>
+    public OtterApiEntityBuilder<T> WithQueryFilter(Expression<Func<T, bool>> predicate)
+    {
+        queryFilters.Add(q => ((IQueryable<T>)q).Where(predicate));
         return this;
     }
 
@@ -143,6 +156,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             DbContextType = dbContextType,
             ExposePagedResult = exposePagedResult,
             AllowedOperations = allowedOperations,
+            QueryFilters = queryFilters,
             Properties = entityType.GetProperties()
                 .Where(x => x.PropertyType.IsTypeSupported()).ToList(),
             NavigationProperties = entityType.GetProperties()

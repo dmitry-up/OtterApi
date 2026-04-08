@@ -30,13 +30,29 @@ public class OtterApiRestController(
             if (otterApiRouteInfo.Entity.Id == null)
                 throw new Exception(KeylessError);
 
-            var result = await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
-                OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+            // No query filters → fast FindAsync path
+            if (otterApiRouteInfo.Entity.QueryFilters.Count == 0)
+            {
+                var result = await ((dynamic)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)).FindAsync(
+                    OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType));
+                return result != null ? GetOkObjectResult(result) : new NotFoundObjectResult(null);
+            }
 
-            return result != null ? GetOkObjectResult(result) : new NotFoundObjectResult(null);
+            // Query filters present → use Where so filters are applied in the same SQL query.
+            // Returns 404 if the record exists but does not pass the filter (do not reveal its existence).
+            var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
+            var filteredSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+            filteredSet = ApplyQueryFilters(filteredSet, otterApiRouteInfo.Entity);
+            var filteredResult = (await filteredSet
+                    .Where($"{otterApiRouteInfo.Entity.Id.Name} == @0", idValue)
+                    .ToDynamicListAsync())
+                .FirstOrDefault();
+            return filteredResult != null ? GetOkObjectResult(filteredResult) : new NotFoundObjectResult(null);
         }
 
         var dbSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
+
+        dbSet = ApplyQueryFilters(dbSet, otterApiRouteInfo.Entity);
 
         foreach (var include in otterApiRouteInfo.IncludeExpression)
         {
@@ -61,7 +77,6 @@ public class OtterApiRestController(
         {
             var pageSize = otterApiRouteInfo.Take == 0 ? 10 : otterApiRouteInfo.Take;
             var page = otterApiRouteInfo.Page < 1 ? 1 : otterApiRouteInfo.Page;
-            
             return GetOkObjectResult(await GetPagedResultAsync(dbSet, page, pageSize));
         }
 
@@ -229,6 +244,7 @@ public class OtterApiRestController(
         var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
         var dbSet = (IQueryable)otterApiRouteInfo.Entity.DbSet.GetValue(dbContext)!;
         var noTracking = (IQueryable)EntityFrameworkQueryableExtensions.AsNoTracking((dynamic)dbSet);
+        noTracking = ApplyQueryFilters(noTracking, otterApiRouteInfo.Entity);
         return (await noTracking
                 .Where($"{otterApiRouteInfo.Entity.Id.Name} == @0", idValue)
                 .ToDynamicListAsync())
@@ -257,6 +273,19 @@ public class OtterApiRestController(
         if (otterApiRouteInfo.Entity?.Id != null)
             return dbSet.OrderBy($"{otterApiRouteInfo.Entity.Id.Name} desc");
 
+        return dbSet;
+    }
+
+    /// <summary>
+    /// Applies all registered query filters to the given IQueryable.
+    /// Each filter is a typed closure that casts to IQueryable&lt;T&gt; and calls .Where(predicate).
+    /// Filters are composed in order — all must pass (AND semantics).
+    /// No-op when QueryFilters is empty.
+    /// </summary>
+    private static IQueryable ApplyQueryFilters(IQueryable dbSet, OtterApiEntity entity)
+    {
+        foreach (var filter in entity.QueryFilters)
+            dbSet = filter(dbSet);
         return dbSet;
     }
 

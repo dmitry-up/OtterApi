@@ -29,6 +29,15 @@ public class KeylessEntity
     public string Code { get; set; } = string.Empty;
 }
 
+/// <summary>Entity used for per-entity query-filter integration tests.</summary>
+public class TestItem
+{
+    [Key] public int Id       { get; set; }
+    public string Name        { get; set; } = string.Empty;
+    public bool IsActive      { get; set; }
+    public int TenantId       { get; set; }
+}
+
 // ── DbContext ──────────────────────────────────────────────────────────────────
 
 public class TestDbContext : DbContext
@@ -37,6 +46,7 @@ public class TestDbContext : DbContext
 
     public DbSet<TestProduct>  Products   { get; set; }
     public DbSet<TestCategory> Categories { get; set; }
+    public DbSet<TestItem>     Items      { get; set; }
 }
 
 public class KeylessDbContext : DbContext

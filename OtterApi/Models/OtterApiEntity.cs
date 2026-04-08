@@ -36,6 +36,13 @@ public class OtterApiEntity
 
     public OtterApiCrudOperation AllowedOperations { get; set; } = OtterApiCrudOperation.All;
 
+    /// <summary>
+    /// Per-entity query filters applied to every GET request (list, count, pagedresult, by-Id).
+    /// Each entry is a typed closure: (IQueryable untyped) → IQueryable with .Where applied.
+    /// Multiple filters are chained — all must pass (AND semantics).
+    /// </summary>
+    public List<Func<IQueryable, IQueryable>> QueryFilters { get; set; } = [];
+
     /// <summary>newEntity = incoming data, originalEntity = current DB state (null for POST)</summary>
     public Func<DbContext, object, object?, OtterApiCrudOperation, Task>? PreSaveHandler { get; set; }
 
