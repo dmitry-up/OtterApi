@@ -109,7 +109,7 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
     {
         var sorts = new List<(PropertyInfo Property, bool Descending)>();
 
-        foreach (var key in queryString.Keys.Where(x => x.ToLower().StartsWith(Sortprefix)))
+        foreach (var key in queryString.Keys.Where(x => x.StartsWith(Sortprefix, StringComparison.OrdinalIgnoreCase)))
         {
             var parts = GetQueryStringParts(key);
             if (parts.property != null)
@@ -151,7 +151,7 @@ public class OtterApiExpressionBuilder(IQueryCollection queryString, OtterApiEnt
     {
         var result = new List<string>();
 
-        foreach (var key in queryString.Keys.Where(x => x.ToLower() == Includeprefix))
+        foreach (var key in queryString.Keys.Where(x => x.Equals(Includeprefix, StringComparison.OrdinalIgnoreCase)))
         {
             result.AddRange(new OtterApiIncludeOtterApiExpression(otterApiEntity, queryString[key]!).Build());
         }

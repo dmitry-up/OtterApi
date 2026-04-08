@@ -16,9 +16,9 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
     private static readonly MethodInfo StringContains =
         typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
 
-    // string.ToLower() — used to implement case-insensitive like/nlike via LOWER(col) LIKE '%val%'.
-    private static readonly MethodInfo StringToLower =
-        typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!;
+    // string.ToLowerInvariant() — culture-independent lowercase, translated to LOWER(col) by all EF Core providers.
+    private static readonly MethodInfo StringToLowerInvariant =
+        typeof(string).GetMethod(nameof(string.ToLowerInvariant), Type.EmptyTypes)!;
 
     public OtterApiFilterResult Build()
     {
@@ -62,13 +62,13 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
 
             // LOWER(col) LIKE '%value%' — case-insensitive, translatable by all EF Core providers.
             "like"  => Expression.Call(
-                           Expression.Call(propExpr, StringToLower),
+                           Expression.Call(propExpr, StringToLowerInvariant),
                            StringContains,
-                           Expression.Constant(((string)converted).ToLower())),
+                           Expression.Constant(((string)converted).ToLowerInvariant())),
             "nlike" => Expression.Not(Expression.Call(
-                           Expression.Call(propExpr, StringToLower),
+                           Expression.Call(propExpr, StringToLowerInvariant),
                            StringContains,
-                           Expression.Constant(((string)converted).ToLower()))),
+                           Expression.Constant(((string)converted).ToLowerInvariant()))),
 
             _ => throw new OtterApiException(
                      "INVALID_FILTER_OPERATOR",

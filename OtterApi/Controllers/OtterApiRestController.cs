@@ -60,7 +60,7 @@ public class OtterApiRestController(
             if (otterApiRouteInfo.Entity.QueryFilters.Count == 0
                 && otterApiRouteInfo.Entity.ScopedQueryFilterFactories.Count == 0)
             {
-                var result = await otterApiRouteInfo.Entity.FindByIdAsync(dbContext, idValue);
+                var result = await otterApiRouteInfo.Entity.FindByIdAsync(dbContext, idValue, ct);
                 return result != null ? GetOkObjectResult(result) : new NotFoundObjectResult(null);
             }
 
@@ -233,7 +233,7 @@ public class OtterApiRestController(
         if (otterApiRouteInfo.Entity.QueryFilters.Count == 0
             && otterApiRouteInfo.Entity.ScopedQueryFilterFactories.Count == 0)
         {
-            entity = await otterApiRouteInfo.Entity.FindByIdAsync(dbContext, idValue);
+            entity = await otterApiRouteInfo.Entity.FindByIdAsync(dbContext, idValue, ct);
         }
         else
         {

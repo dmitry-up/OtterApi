@@ -295,7 +295,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             PostSaveHandlers = postSaveHandlers,
 
             // ── Typed delegates compiled once from T ────────────────────────────
-            FindByIdAsync = async (ctx, id) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }),
+            FindByIdAsync = async (ctx, id, ct) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }, ct),
             AsNoTracking  = q => ((IQueryable<T>)q).AsNoTracking(),
             CountAsync    = (q, ct) => ((IQueryable<T>)q).CountAsync(ct),
             Include       = (q, nav) => ((IQueryable<T>)q).Include(nav),

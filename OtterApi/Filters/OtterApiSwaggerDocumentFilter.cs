@@ -261,7 +261,11 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                     OperationId = GetOperationId($"{entity.Route.ToLower()}/deleteById"),
                     Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                     Description = $"Delete {entity.EntityType.Name} by id",
-                    Responses = { ["200"] = new OpenApiResponse { Description = "Success" } },
+                    Responses =
+                    {
+                        ["204"] = new OpenApiResponse { Description = "No Content" },
+                        ["404"] = new OpenApiResponse { Description = "Not Found" }
+                    },
                     Parameters = new List<OpenApiParameter>
                     {
                         new() { Name = "id", Schema = idSchema, Required = true, In = ParameterLocation.Path }

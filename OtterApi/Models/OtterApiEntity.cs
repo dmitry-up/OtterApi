@@ -68,10 +68,10 @@ public class OtterApiEntity
     // ── Typed delegates — compiled once at startup, replace dynamic dispatch on every request ──
 
     /// <summary>
-    /// Finds an entity by primary key. Equivalent to DbSet&lt;T&gt;.FindAsync(id).
+    /// Finds an entity by primary key. Equivalent to DbSet&lt;T&gt;.FindAsync(id, ct).
     /// Compiled at startup from the generic T — no DLR overhead per request.
     /// </summary>
-    public Func<DbContext, object, Task<object?>> FindByIdAsync { get; init; } = null!;
+    public Func<DbContext, object, CancellationToken, Task<object?>> FindByIdAsync { get; init; } = null!;
 
     /// <summary>
     /// Wraps IQueryable&lt;T&gt;.AsNoTracking() on the untyped IQueryable.

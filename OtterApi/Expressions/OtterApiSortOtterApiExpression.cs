@@ -5,11 +5,10 @@ namespace OtterApi.Expressions;
 public class OtterApiSortOtterApiExpression(string propertyName, string sortOrder) : IOtterApiExpression<string>
 {
     /// <summary>Returns <c>true</c> when the sort direction is descending.</summary>
-    public bool IsDescending => sortOrder.ToLower() switch
-    {
-        "desc" or "1" or "descending" => true,
-        _ => false
-    };
+    public bool IsDescending =>
+        sortOrder.Equals("desc",       StringComparison.OrdinalIgnoreCase) ||
+        sortOrder.Equals("descending", StringComparison.OrdinalIgnoreCase) ||
+        sortOrder.Equals("1",          StringComparison.Ordinal);
 
     public string Build()
     {
