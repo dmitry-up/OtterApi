@@ -17,7 +17,7 @@ public class OtterApiMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, IOtterApiRequestProcessor otterApiRequestProcessor,
         IAuthorizationService authorizationService)
     {
-        var routeInfo = otterApiRequestProcessor.GetRoutInfo(context.Request);
+        var routeInfo = otterApiRequestProcessor.GetRouteInfo(context.Request);
         var result = new ObjectResult(null);
 
         if (routeInfo.Entity != null)

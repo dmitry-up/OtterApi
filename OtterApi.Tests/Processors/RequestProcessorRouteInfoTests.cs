@@ -8,7 +8,7 @@ using Xunit;
 namespace OtterApi.Tests.Processors;
 
 /// <summary>
-/// Contract: OtterApiRequestProcessor.GetRoutInfo maps an incoming HTTP path
+/// Contract: OtterApiRequestProcessor.GetRouteInfo maps an incoming HTTP path
 /// to the correct OtterApiRouteInfo fields (entity, id, count, paged-result,
 /// filter / sort / paging / include expressions).
 ///

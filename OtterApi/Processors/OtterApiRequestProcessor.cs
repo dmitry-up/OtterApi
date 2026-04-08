@@ -32,7 +32,7 @@ public class OtterApiRequestProcessor(
     }
 
 
-    public OtterApiRouteInfo GetRoutInfo(HttpRequest request)
+    public OtterApiRouteInfo GetRouteInfo(HttpRequest request)
     {
         PathString path = null;
         var result = new OtterApiRouteInfo();

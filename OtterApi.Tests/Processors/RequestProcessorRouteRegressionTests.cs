@@ -8,7 +8,7 @@ using Xunit;
 namespace OtterApi.Tests.Processors;
 
 /// <summary>
-/// Regression tests for routing bugs in GetRoutInfo.
+/// Regression tests for routing bugs in GetRouteInfo.
 /// </summary>
 public class RequestProcessorRouteRegressionTests
 {
@@ -22,7 +22,7 @@ public class RequestProcessorRouteRegressionTests
     private static OtterApiRegistry BuildRegistry(OtterApiEntity entity)
         => new([entity], new OtterApiOptions { Path = "/api" });
 
-    // Helper that replicates GetRoutInfo logic (same as in RequestProcessorRouteInfoTests)
+    // Helper that replicates GetRouteInfo logic (same as in RequestProcessorRouteInfoTests)
     private static OtterApiRouteInfo GetRouteInfo(OtterApiRegistry registry, HttpRequest request)
     {
         PathString path = null;

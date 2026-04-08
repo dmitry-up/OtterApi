@@ -555,14 +555,14 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteAsync_RemovesItem_ReturnsOk()
+    public async Task DeleteAsync_RemovesItem_ReturnsNoContent()
     {
         var routeInfo = CollectionRoute();
         routeInfo.Id  = "1";
 
         var result = await _ctrl.DeleteAsync(routeInfo);
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(204, result.StatusCode);
         Assert.Null(_db.Products.Find(1));
     }
 

@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization.Metadata;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
@@ -8,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using OtterApi.Configs;
 using OtterApi.Converters;
 using OtterApi.Enums;
+using OtterApi.Exceptions;
 using OtterApi.Helpers;
 using OtterApi.Interfaces;
 using OtterApi.Models;
@@ -22,7 +24,8 @@ public class OtterApiRestController(
     OtterApiRegistry? registry = null)
     : IOtterApiRestController
 {
-    private const string KeylessError = "Operation not allowed for keyless entities";
+    private const string KeylessError  = "Operation not allowed for keyless entities";
+    private const string KeylessCode   = "KEYLESS_ENTITY";
 
     /// <summary>
     /// Fallback serialization options used when the controller is created without a registry
@@ -49,7 +52,7 @@ public class OtterApiRestController(
         if (otterApiRouteInfo.Id != null)
         {
             if (otterApiRouteInfo.Entity.Id == null)
-                throw new Exception(KeylessError);
+                throw new OtterApiException(KeylessCode, KeylessError, StatusCodes.Status405MethodNotAllowed);
 
             var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
 
@@ -107,7 +110,7 @@ public class OtterApiRestController(
     public async Task<ObjectResult> PostAsync(OtterApiRouteInfo otterApiRouteInfo, object entity, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
-            throw new Exception(KeylessError);
+            throw new OtterApiException(KeylessCode, KeylessError, StatusCodes.Status405MethodNotAllowed);
 
         if (!IsValid(entity))
             return new BadRequestObjectResult(actionContext.ModelState);
@@ -126,7 +129,7 @@ public class OtterApiRestController(
     public async Task<ObjectResult> PutAsync(OtterApiRouteInfo otterApiRouteInfo, object entity, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
-            throw new Exception(KeylessError);
+            throw new OtterApiException(KeylessCode, KeylessError, StatusCodes.Status405MethodNotAllowed);
 
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for PUT operations");
@@ -157,7 +160,7 @@ public class OtterApiRestController(
     public async Task<ObjectResult> PatchAsync(OtterApiRouteInfo otterApiRouteInfo, JsonObject patch, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
-            throw new Exception(KeylessError);
+            throw new OtterApiException(KeylessCode, KeylessError, StatusCodes.Status405MethodNotAllowed);
 
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for PATCH operations");
@@ -207,7 +210,7 @@ public class OtterApiRestController(
     public async Task<ObjectResult> DeleteAsync(OtterApiRouteInfo otterApiRouteInfo, CancellationToken ct = default)
     {
         if (otterApiRouteInfo.Entity.Id == null)
-            throw new Exception(KeylessError);
+            throw new OtterApiException(KeylessCode, KeylessError, StatusCodes.Status405MethodNotAllowed);
 
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for DELETE operations");
@@ -226,7 +229,7 @@ public class OtterApiRestController(
         foreach (var h in otterApiRouteInfo.Entity.PostSaveHandlers)
             await h(dbContext, entity, entity, OtterApiCrudOperation.Delete);
 
-        return new OkObjectResult("");
+        return new ObjectResult(null) { StatusCode = StatusCodes.Status204NoContent };
     }
 
     protected virtual bool IsValid(object entity)
