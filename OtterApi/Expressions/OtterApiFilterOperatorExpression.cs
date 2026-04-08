@@ -12,8 +12,13 @@ namespace OtterApi.Expressions;
 public class OtterApiFilterOperatorExpression(PropertyInfo property, string value, string comparisonOperator)
     : IOtterApiExpression<OtterApiFilterResult>
 {
-    private static readonly MethodInfo StringContainsOrdinalIgnoreCase =
-        typeof(string).GetMethod(nameof(string.Contains), [typeof(string), typeof(StringComparison)])!;
+    // string.Contains(string) — universally translated by all EF Core providers.
+    private static readonly MethodInfo StringContains =
+        typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
+
+    // string.ToLower() — used to implement case-insensitive like/nlike via LOWER(col) LIKE '%val%'.
+    private static readonly MethodInfo StringToLower =
+        typeof(string).GetMethod(nameof(string.ToLower), Type.EmptyTypes)!;
 
     public OtterApiFilterResult Build()
     {
@@ -54,14 +59,21 @@ public class OtterApiFilterOperatorExpression(PropertyInfo property, string valu
             "lteq"  => Expression.LessThanOrEqual(propExpr, constExpr),
             "gt"    => Expression.GreaterThan(propExpr, constExpr),
             "gteq"  => Expression.GreaterThanOrEqual(propExpr, constExpr),
-            "like"  => Expression.Call(propExpr, StringContainsOrdinalIgnoreCase,
-                           constExpr, Expression.Constant(StringComparison.OrdinalIgnoreCase)),
-            "nlike" => Expression.Not(Expression.Call(propExpr, StringContainsOrdinalIgnoreCase,
-                           constExpr, Expression.Constant(StringComparison.OrdinalIgnoreCase))),
-            _       => throw new OtterApiException(
-                           "INVALID_FILTER_OPERATOR",
-                           $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",
-                           400)
+
+            // LOWER(col) LIKE '%value%' — case-insensitive, translatable by all EF Core providers.
+            "like"  => Expression.Call(
+                           Expression.Call(propExpr, StringToLower),
+                           StringContains,
+                           Expression.Constant(((string)converted).ToLower())),
+            "nlike" => Expression.Not(Expression.Call(
+                           Expression.Call(propExpr, StringToLower),
+                           StringContains,
+                           Expression.Constant(((string)converted).ToLower()))),
+
+            _ => throw new OtterApiException(
+                     "INVALID_FILTER_OPERATOR",
+                     $"Operator '{comparisonOperator}' is not supported for type '{property.PropertyType.Name}'.",
+                     400)
         };
 
         return new OtterApiFilterResult { Predicate = Expression.Lambda(pred, param) };

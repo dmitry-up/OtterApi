@@ -10,7 +10,12 @@ namespace OtterApi.Configs;
 
 public static class OtterApiConfiguration
 {
-    public static readonly List<OtterApiOperator> Operators =
+    /// <summary>
+    /// The complete set of filter operators recognised by OtterApi.
+    /// Exposed as <see cref="IReadOnlyList{T}"/> so external code can enumerate
+    /// but cannot mutate the list or individual operator objects.
+    /// </summary>
+    public static IReadOnlyList<OtterApiOperator> Operators { get; } =
     [
         new() { Name = "eq",    SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },
         new() { Name = "neq",   SupportsString = true,  SupportsValueType = true,  SupportsGuid = true  },

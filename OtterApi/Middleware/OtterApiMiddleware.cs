@@ -120,6 +120,17 @@ public class OtterApiMiddleware(RequestDelegate next)
                 }));
                 return;
             }
+            catch (Exception ex) when (ex is FormatException or OverflowException)
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = "INVALID_ID_FORMAT",
+                    message = "The supplied identifier has an invalid format or is out of range."
+                }));
+                return;
+            }
 
             await executor.ExecuteAsync(actionContext, result);
         }

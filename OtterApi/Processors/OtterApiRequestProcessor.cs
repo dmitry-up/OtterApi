@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OtterApi.Builders;
 using OtterApi.Configs;
 using OtterApi.Controllers;
+using OtterApi.Exceptions;
 using OtterApi.Interfaces;
 using OtterApi.Models;
 
@@ -22,7 +23,13 @@ public class OtterApiRequestProcessor(
 {
     public async Task<object> GetData(HttpRequest request, Type type)
     {
-        return await JsonSerializer.DeserializeAsync(request.Body, type, registry.DeserializationOptions);
+        var result = await JsonSerializer.DeserializeAsync(request.Body, type, registry.DeserializationOptions);
+        if (result is null)
+            throw new OtterApiException(
+                "INVALID_BODY",
+                "Request body must not be null or empty.",
+                StatusCodes.Status400BadRequest);
+        return result;
     }
 
     public async Task<JsonObject> GetPatchData(HttpRequest request)

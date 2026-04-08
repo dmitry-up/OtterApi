@@ -165,13 +165,23 @@ public class OtterApiRestController(
         if (string.IsNullOrEmpty(otterApiRouteInfo.Id))
             return new BadRequestObjectResult("Id is required in the route for PATCH operations");
 
+        var idValue = OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType);
+
+        // Load the no-tracking snapshot for handlers (respects query filters — 404 when filtered out).
         var original = await LoadOriginalAsync(otterApiRouteInfo, ct);
         if (original == null)
             return new NotFoundObjectResult(null);
 
-        object tracked = (await otterApiRouteInfo.Entity.FindByIdAsync(
-            dbContext,
-            OtterApiTypeConverter.ChangeType(otterApiRouteInfo.Id, otterApiRouteInfo.Entity.Id.PropertyType)))!;
+        // Load the tracked entity through the same query filters so we never touch
+        // a row hidden by a tenant / soft-delete filter (replaces the old FindByIdAsync
+        // which bypassed all application-level filters).
+        var trackedSet = otterApiRouteInfo.Entity.GetDbSet(dbContext);
+        trackedSet = ApplyQueryFilters(trackedSet, otterApiRouteInfo.Entity);
+        trackedSet = ApplyScopedQueryFilters(trackedSet, otterApiRouteInfo.Entity);
+        trackedSet = otterApiRouteInfo.Entity.WhereId(trackedSet, idValue);
+        var tracked = (await otterApiRouteInfo.Entity.ToListAsync(trackedSet, ct)).FirstOrDefault();
+        if (tracked == null)
+            return new NotFoundObjectResult(null);
 
         var patchOptions = registry?.PatchOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
