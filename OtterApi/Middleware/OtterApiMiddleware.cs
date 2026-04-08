@@ -131,6 +131,11 @@ public class OtterApiMiddleware(RequestDelegate next)
                 }));
                 return;
             }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected or request timed out — not a server error; abort silently.
+                return;
+            }
 
             await executor.ExecuteAsync(actionContext, result);
         }
