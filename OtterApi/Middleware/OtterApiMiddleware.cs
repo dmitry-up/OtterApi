@@ -151,6 +151,17 @@ public class OtterApiMiddleware(RequestDelegate next)
                 }));
                 return;
             }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("OtterApi:"))
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = "INVALID_QUERY_PARAM",
+                    message = ex.Message
+                }));
+                return;
+            }
             catch (OperationCanceledException)
             {
                 // Client disconnected or request timed out — not a server error; abort silently.
