@@ -2,11 +2,12 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.AspNetCore.Http;
 using OtterApi.Converters;
+using OtterApi.Interfaces;
 using OtterApi.Models;
 
 namespace OtterApi.Configs;
 
-public class OtterApiRegistry
+public class OtterApiRegistry : IOtterApiRegistry
 {
     public IReadOnlyList<OtterApiEntity> Entities { get; }
     public OtterApiOptions Options { get; }

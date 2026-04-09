@@ -18,7 +18,7 @@ namespace OtterApi.Processors;
 public class OtterApiRequestProcessor(
     IServiceProvider serviceProvider,
     IObjectModelValidator objectModelValidator,
-    OtterApiRegistry registry)
+    IOtterApiRegistry registry)
     : IOtterApiRequestProcessor
 {
     public async Task<object> GetData(HttpRequest request, Type type)

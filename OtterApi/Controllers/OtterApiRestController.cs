@@ -21,7 +21,7 @@ public class OtterApiRestController(
     ActionContext actionContext,
     IObjectModelValidator objectModelValidator,
     IServiceProvider? serviceProvider = null,
-    OtterApiRegistry? registry = null)
+    IOtterApiRegistry? registry = null)
     : IOtterApiRestController
 {
     private const string KeylessError  = "Operation not allowed for keyless entities";

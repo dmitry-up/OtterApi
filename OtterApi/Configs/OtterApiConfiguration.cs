@@ -45,7 +45,7 @@ public static class OtterApiConfiguration
 
         var registry = new OtterApiRegistry(entities, options);
 
-        serviceCollection.AddSingleton(registry);
+        serviceCollection.AddSingleton<IOtterApiRegistry>(registry);
         serviceCollection.AddTransient<IOtterApiRequestProcessor, OtterApiRequestProcessor>();
     }
 
