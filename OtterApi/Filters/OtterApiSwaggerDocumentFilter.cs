@@ -3,12 +3,13 @@ using Microsoft.OpenApi.Interfaces;
 using Microsoft.OpenApi.Models;
 using OtterApi.Configs;
 using OtterApi.Enums;
+using OtterApi.Interfaces;
 using OtterApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace OtterApi.Filters;
 
-public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumentFilter
+public class OtterApiSwaggerDocumentFilter(IOtterApiRegistry registry) : IDocumentFilter
 {
     private static readonly Dictionary<Type, Func<OpenApiSchema>> SchemaTypeMap = new()
     {
