@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.EntityFrameworkCore;
-using OtterApi.Configs;
 using OtterApi.Converters;
 using OtterApi.Enums;
 using OtterApi.Exceptions;

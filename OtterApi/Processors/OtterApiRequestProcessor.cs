@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Mvc.ModelBinding.Validation;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using OtterApi.Builders;
-using OtterApi.Configs;
 using OtterApi.Controllers;
 using OtterApi.Exceptions;
 using OtterApi.Interfaces;
