@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using OtterApi.Enums;
 using OtterApi.Exceptions;
 using OtterApi.Interfaces;
@@ -17,7 +18,27 @@ public class OtterApiMiddleware(RequestDelegate next)
     public async Task InvokeAsync(HttpContext context, IOtterApiRequestProcessor otterApiRequestProcessor,
         IAuthorizationService authorizationService)
     {
-        var routeInfo = otterApiRequestProcessor.GetRoutInfo(context.Request);
+        // GetRouteInfo builds filter/sort Expression trees from query-string parameters.
+        // If a filter value contains invalid JSON (e.g. filter[field][in]=notJson) a JsonException
+        // is thrown here — before the inner try/catch that guards controller calls.
+        // Catch it early so we return a structured 400 instead of propagating unhandled.
+        OtterApiRouteInfo routeInfo;
+        try
+        {
+            routeInfo = otterApiRequestProcessor.GetRouteInfo(context.Request);
+        }
+        catch (JsonException)
+        {
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                code    = "INVALID_JSON",
+                message = "A query parameter contains invalid JSON (e.g. filter[field][in] must be a valid JSON array)."
+            }));
+            return;
+        }
+
         var result = new ObjectResult(null);
 
         if (routeInfo.Entity != null)
@@ -53,26 +74,29 @@ public class OtterApiMiddleware(RequestDelegate next)
                 switch (context.Request.Method)
                 {
                     case "GET":
-                        result = await controller.GetAsync(routeInfo);
+                        result = await controller.GetAsync(routeInfo, context.RequestAborted);
                         break;
 
                     case "POST":
                         result = await controller.PostAsync(routeInfo,
-                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType));
+                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType),
+                            context.RequestAborted);
                         break;
 
                     case "PUT":
                         result = await controller.PutAsync(routeInfo,
-                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType));
+                            await otterApiRequestProcessor.GetData(context.Request, routeInfo.Entity.EntityType),
+                            context.RequestAborted);
                         break;
 
                     case "DELETE":
-                        result = await controller.DeleteAsync(routeInfo);
+                        result = await controller.DeleteAsync(routeInfo, context.RequestAborted);
                         break;
 
                     case "PATCH":
                         result = await controller.PatchAsync(routeInfo,
-                            await otterApiRequestProcessor.GetPatchData(context.Request));
+                            await otterApiRequestProcessor.GetPatchData(context.Request),
+                            context.RequestAborted);
                         break;
                 }
             }
@@ -85,6 +109,62 @@ public class OtterApiMiddleware(RequestDelegate next)
                     code = ex.Code,
                     message = ex.Message
                 }));
+                return;
+            }
+            catch (JsonException)
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code = "INVALID_JSON",
+                    message = "The request body contains invalid JSON."
+                }));
+                return;
+            }
+            catch (DbUpdateException ex)
+            {
+                var inner = ex.InnerException?.Message ?? ex.Message;
+                var isConflict = inner.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+                              || inner.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+                              || inner.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase);
+
+                context.Response.StatusCode = isConflict ? 409 : 422;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = isConflict ? "CONFLICT" : "DB_UPDATE_ERROR",
+                    message = isConflict
+                        ? "A record with the same key or unique field already exists."
+                        : "The database update failed. Check for constraint violations."
+                }));
+                return;
+            }
+            catch (Exception ex) when (ex is FormatException or OverflowException)
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = "INVALID_ID_FORMAT",
+                    message = "The supplied identifier has an invalid format or is out of range."
+                }));
+                return;
+            }
+            catch (InvalidOperationException ex) when (ex.Message.StartsWith("OtterApi:"))
+            {
+                context.Response.StatusCode = 400;
+                context.Response.ContentType = "application/json";
+                await context.Response.WriteAsync(JsonSerializer.Serialize(new
+                {
+                    code    = "INVALID_QUERY_PARAM",
+                    message = ex.Message
+                }));
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected or request timed out — not a server error; abort silently.
                 return;
             }
 
@@ -128,6 +208,10 @@ public class OtterApiMiddleware(RequestDelegate next)
 
             case "DELETE":
                 methodPolicy = aPiEntity.DeletePolicy;
+                break;
+
+            case "PATCH":
+                methodPolicy = aPiEntity.PatchPolicy;
                 break;
         }
 

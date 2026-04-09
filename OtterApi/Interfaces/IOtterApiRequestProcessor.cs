@@ -8,7 +8,7 @@ namespace OtterApi.Interfaces;
 
 public interface IOtterApiRequestProcessor
 {
-    OtterApiRouteInfo GetRoutInfo(HttpRequest request);
+    OtterApiRouteInfo GetRouteInfo(HttpRequest request);
 
     Task<object> GetData(HttpRequest request, Type type);
 

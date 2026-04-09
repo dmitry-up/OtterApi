@@ -8,7 +8,7 @@ using Xunit;
 namespace OtterApi.Tests.Processors;
 
 /// <summary>
-/// Regression tests for routing bugs in GetRoutInfo.
+/// Regression tests for routing bugs in GetRouteInfo.
 /// </summary>
 public class RequestProcessorRouteRegressionTests
 {
@@ -22,7 +22,7 @@ public class RequestProcessorRouteRegressionTests
     private static OtterApiRegistry BuildRegistry(OtterApiEntity entity)
         => new([entity], new OtterApiOptions { Path = "/api" });
 
-    // Helper that replicates GetRoutInfo logic (same as in RequestProcessorRouteInfoTests)
+    // Helper that replicates GetRouteInfo logic (same as in RequestProcessorRouteInfoTests)
     private static OtterApiRouteInfo GetRouteInfo(OtterApiRegistry registry, HttpRequest request)
     {
         PathString path = null;
@@ -56,10 +56,8 @@ public class RequestProcessorRouteRegressionTests
         if (apiEntity != null && string.IsNullOrWhiteSpace(result.Id) && request.Query?.Keys.Count > 0)
         {
             var builder = new OtterApi.Builders.OtterApiExpressionBuilder(request.Query, apiEntity);
-            var filterResult = builder.BuildFilterResult();
-            result.FilterExpression = filterResult.Filter;
-            result.FilterValues     = filterResult.Values;
-            result.SortExpression   = builder.BuildSortResult();
+            result.FilterApply = builder.BuildFilterResult();
+            result.SortApply   = builder.BuildSortResult();
             var pageResult  = builder.BuildPagingResult();
             result.Take     = pageResult.Take;
             result.Skip     = pageResult.Skip;
@@ -111,7 +109,7 @@ public class RequestProcessorRouteRegressionTests
         var info = GetRouteInfo(registry, ctx.Request);
 
         Assert.Null(info.Id);
-        Assert.Equal("Name == @0", info.FilterExpression);
+        Assert.NotNull(info.FilterApply);
     }
 
     // ── Bug C: DELETE/PUT to collection endpoint (no id) must not crash ───────

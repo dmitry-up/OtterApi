@@ -67,22 +67,20 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     // ── Helper: build a RouteInfo for collection requests ────────────────────
 
     private OtterApiRouteInfo CollectionRoute(
-        string? filterExpression  = null,
-        object[]? filterValues    = null,
-        string? sortExpression    = null,
+        Func<IQueryable, IQueryable>? filterApply = null,
+        Func<IQueryable, IQueryable>? sortApply   = null,
         int skip = 0, int take = 0, int page = 0,
         bool isCount = false, bool isPageResult = false,
         List<string>? includes = null) => new()
     {
-        Entity           = _entity,
-        FilterExpression = filterExpression,
-        FilterValues     = filterValues,
-        SortExpression   = sortExpression,
-        Skip             = skip,
-        Take             = take,
-        Page             = page,
-        IsCount          = isCount,
-        IsPageResult     = isPageResult,
+        Entity            = _entity,
+        FilterApply       = filterApply,
+        SortApply         = sortApply,
+        Skip              = skip,
+        Take              = take,
+        Page              = page,
+        IsCount           = isCount,
+        IsPageResult      = isPageResult,
         IncludeExpression = includes ?? [],
     };
 
@@ -149,8 +147,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_EqualityFilter_OnName_ReturnsSingleMatch()
     {
         var route  = CollectionRoute(
-            filterExpression: "Name == @0",
-            filterValues:     ["Alpha"]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Name == "Alpha"));
 
         var result   = await _ctrl.GetAsync(route);
         var products = Items(result);
@@ -163,8 +160,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_EqualityFilter_NoMatch_ReturnsEmpty()
     {
         var route = CollectionRoute(
-            filterExpression: "Name == @0",
-            filterValues:     ["NonExistent"]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Name == "NonExistent"));
 
         var result = await _ctrl.GetAsync(route);
 
@@ -180,8 +176,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Price > 10  →  Beta(15), Gamma(25), Epsilon(30)
         var route = CollectionRoute(
-            filterExpression: "Price > @0",
-            filterValues:     [10m]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Price > 10m));
 
         var result   = await _ctrl.GetAsync(route);
         var products = Items(result);
@@ -195,8 +190,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Price < 10  →  Alpha(5), Delta(8)
         var route = CollectionRoute(
-            filterExpression: "Price < @0",
-            filterValues:     [10m]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Price < 10m));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -209,8 +203,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Name.Contains("a")  →  Alpha, Gamma, Delta, Epsilon (case-sensitive in memory)
         var route = CollectionRoute(
-            filterExpression: "Name.Contains(@0)",
-            filterValues:     ["a"]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Name.Contains("a")));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -222,8 +215,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // CategoryId in [1]  →  Alpha, Beta, Epsilon
         var route = CollectionRoute(
-            filterExpression: "@0.Contains(CategoryId)",
-            filterValues:     [new List<int> { 1 }]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => new List<int> { 1 }.Contains(p.CategoryId)));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -236,8 +228,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // CategoryId not-in [1]  →  Gamma, Delta
         var route = CollectionRoute(
-            filterExpression: "!@0.Contains(CategoryId)",
-            filterValues:     [new List<int> { 1 }]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => !new List<int> { 1 }.Contains(p.CategoryId)));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -254,8 +245,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Price > 5 AND CategoryId == 1  →  Beta(15,1), Epsilon(30,1)
         var route = CollectionRoute(
-            filterExpression: "Price > @0 && CategoryId == @1",
-            filterValues:     [5m, 1]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Price > 5m && p.CategoryId == 1));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -272,8 +262,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Name == "Alpha" OR Name == "Gamma"  →  2 items
         var route = CollectionRoute(
-            filterExpression: "Name == @0 || Name == @1",
-            filterValues:     ["Alpha", "Gamma"]);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Name == "Alpha" || p.Name == "Gamma"));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -290,7 +279,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     [Fact]
     public async Task GetAsync_SortByName_Ascending_ReturnsAlphabeticalOrder()
     {
-        var route = CollectionRoute(sortExpression: "Name asc");
+        var route = CollectionRoute(sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Name));
 
         var names = Items(await _ctrl.GetAsync(route)).Select(p => p.Name).ToList();
 
@@ -300,7 +289,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     [Fact]
     public async Task GetAsync_SortByName_Descending_ReturnsReverseAlphabeticalOrder()
     {
-        var route = CollectionRoute(sortExpression: "Name desc");
+        var route = CollectionRoute(sortApply: q => ((IQueryable<TestProduct>)q).OrderByDescending(p => p.Name));
 
         var names = Items(await _ctrl.GetAsync(route)).Select(p => p.Name).ToList();
 
@@ -310,7 +299,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     [Fact]
     public async Task GetAsync_SortByPrice_Ascending_ReturnsCheapestFirst()
     {
-        var route = CollectionRoute(sortExpression: "Price asc");
+        var route = CollectionRoute(sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Price));
 
         var prices = Items(await _ctrl.GetAsync(route)).Select(p => p.Price).ToList();
 
@@ -320,7 +309,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     [Fact]
     public async Task GetAsync_SortByPrice_Descending_ReturnsMostExpensiveFirst()
     {
-        var route = CollectionRoute(sortExpression: "Price desc");
+        var route = CollectionRoute(sortApply: q => ((IQueryable<TestProduct>)q).OrderByDescending(p => p.Price));
 
         var prices = Items(await _ctrl.GetAsync(route)).Select(p => p.Price).ToList();
 
@@ -336,7 +325,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Sort by Id asc, take page 2 (skip 2, take 2) → Ids 3,4
         var route = CollectionRoute(
-            sortExpression: "Id asc",
+            sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
             skip: 2, take: 2);
 
         var ids = Items(await _ctrl.GetAsync(route)).Select(p => p.Id).ToList();
@@ -348,7 +337,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_SkipTake_FirstPage_ReturnsFirstItems()
     {
         var route = CollectionRoute(
-            sortExpression: "Id asc",
+            sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
             skip: 0, take: 3);
 
         var ids = Items(await _ctrl.GetAsync(route)).Select(p => p.Id).ToList();
@@ -360,7 +349,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_SkipTake_LastPage_ReturnsRemainingItems()
     {
         var route = CollectionRoute(
-            sortExpression: "Id asc",
+            sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
             skip: 4, take: 10);
 
         var ids = Items(await _ctrl.GetAsync(route)).Select(p => p.Id).ToList();
@@ -372,7 +361,7 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_Take0_ReturnsAllItems()
     {
         // Take == 0 means no pagination → return everything
-        var route = CollectionRoute(sortExpression: "Id asc", take: 0);
+        var route = CollectionRoute(sortApply: q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id), take: 0);
 
         var result = Items(await _ctrl.GetAsync(route));
 
@@ -399,9 +388,8 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Count where Price > 10 → 3
         var route = CollectionRoute(
-            filterExpression: "Price > @0",
-            filterValues:     [10m],
-            isCount:          true);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Price > 10m),
+            isCount:     true);
 
         var result = await _ctrl.GetAsync(route);
 
@@ -427,12 +415,12 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_IsPageResult_Page1_ReturnsFirstTwoItems()
     {
         // Sort by Id asc, page=1, pageSize=2 → Ids [5,4] (desc default if no sort set)
-        // But we set sortExpression explicitly
+        // But we set sortApply explicitly
         var route = CollectionRoute(
-            sortExpression: "Id asc",
-            isPageResult:   true,
-            take:           2,
-            page:           1);
+            sortApply:    q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
+            isPageResult: true,
+            take:         2,
+            page:         1);
 
         var paged = (OtterApiPagedResult)(await _ctrl.GetAsync(route)).Value!;
 
@@ -450,10 +438,10 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_IsPageResult_Page2_ReturnsSecondPage()
     {
         var route = CollectionRoute(
-            sortExpression: "Id asc",
-            isPageResult:   true,
-            take:           2,
-            page:           2);
+            sortApply:    q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
+            isPageResult: true,
+            take:         2,
+            page:         2);
 
         var paged = (OtterApiPagedResult)(await _ctrl.GetAsync(route)).Value!;
 
@@ -466,10 +454,10 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     public async Task GetAsync_IsPageResult_LastPage_HasCorrectItemCount()
     {
         var route = CollectionRoute(
-            sortExpression: "Id asc",
-            isPageResult:   true,
-            take:           2,
-            page:           3);
+            sortApply:    q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
+            isPageResult: true,
+            take:         2,
+            page:         3);
 
         var paged = (OtterApiPagedResult)(await _ctrl.GetAsync(route)).Value!;
 
@@ -505,11 +493,10 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Price > 10 → 3 items, pageSize=2 → 2 pages
         var route = CollectionRoute(
-            filterExpression: "Price > @0",
-            filterValues:     [10m],
-            isPageResult:     true,
-            take:             2,
-            page:             1);
+            filterApply:  q => ((IQueryable<TestProduct>)q).Where(p => p.Price > 10m),
+            isPageResult: true,
+            take:         2,
+            page:         1);
 
         var paged = (OtterApiPagedResult)(await _ctrl.GetAsync(route)).Value!;
 
@@ -527,9 +514,8 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // CategoryId == 1 (Alpha, Beta, Epsilon), sorted by Price desc → Epsilon, Beta, Alpha
         var route = CollectionRoute(
-            filterExpression: "CategoryId == @0",
-            filterValues:     [1],
-            sortExpression:   "Price desc");
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.CategoryId == 1),
+            sortApply:   q => ((IQueryable<TestProduct>)q).OrderByDescending(p => p.Price));
 
         var products = Items(await _ctrl.GetAsync(route));
 
@@ -542,11 +528,10 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     {
         // Price > 5 (Beta,Gamma,Delta,Epsilon = 4 items), sorted by Id asc, page1/size2 → Beta,Gamma
         var route = CollectionRoute(
-            filterExpression: "Price > @0",
-            filterValues:     [5m],
-            sortExpression:   "Id asc",
-            skip:             0,
-            take:             2);
+            filterApply: q => ((IQueryable<TestProduct>)q).Where(p => p.Price > 5m),
+            sortApply:   q => ((IQueryable<TestProduct>)q).OrderBy(p => p.Id),
+            skip:        0,
+            take:        2);
 
         var ids = Items(await _ctrl.GetAsync(route)).Select(p => p.Id).ToList();
 
@@ -570,14 +555,14 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteAsync_RemovesItem_ReturnsOk()
+    public async Task DeleteAsync_RemovesItem_ReturnsNoContent()
     {
         var routeInfo = CollectionRoute();
         routeInfo.Id  = "1";
 
         var result = await _ctrl.DeleteAsync(routeInfo);
 
-        Assert.IsType<OkObjectResult>(result);
+        Assert.Equal(204, result.StatusCode);
         Assert.Null(_db.Products.Find(1));
     }
 
@@ -600,6 +585,20 @@ public class ControllerGetAsyncIntegrationTests : IDisposable
         var fromDb = _db.Products.Find(2)!;
         Assert.Equal("BetaUpdated", fromDb.Name);
         Assert.Equal(99m,           fromDb.Price);
+    }
+
+    [Fact]
+    public async Task PutAsync_WithMismatchedBodyAndRouteId_ReturnsBadRequest()
+    {
+        // Route says Id=2, but body has Id=3 — controller must reject this
+        var routeInfo = CollectionRoute();
+        routeInfo.Id  = "2";
+
+        var updated = new TestProduct { Id = 3, Name = "Mismatch", Price = 5m, CategoryId = 1 };
+
+        var result = await _ctrl.PutAsync(routeInfo, updated);
+
+        Assert.IsType<BadRequestObjectResult>(result);
     }
 }
 

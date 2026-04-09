@@ -3,12 +3,13 @@ using Microsoft.OpenApi.Interfaces;
 using Microsoft.OpenApi.Models;
 using OtterApi.Configs;
 using OtterApi.Enums;
+using OtterApi.Interfaces;
 using OtterApi.Models;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace OtterApi.Filters;
 
-public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumentFilter
+public class OtterApiSwaggerDocumentFilter(IOtterApiRegistry registry) : IDocumentFilter
 {
     private static readonly Dictionary<Type, Func<OpenApiSchema>> SchemaTypeMap = new()
     {
@@ -123,6 +124,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                     OperationId = GetOperationId($"{entity.Route.ToLower()}/get"),
                     Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                     Description = $"Get all/filter items for {entity.EntityType.Name}",
+                    Parameters = BuildGetListParameters(entity),
                     Responses =
                     {
                         ["200"] = new OpenApiResponse
@@ -211,7 +213,9 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                 continue;
 
             var idPropertyType = Nullable.GetUnderlyingType(entity.Id.PropertyType) ?? entity.Id.PropertyType;
-            var idSchema = SchemaTypeMap[idPropertyType]();
+            var idSchema = SchemaTypeMap.TryGetValue(idPropertyType, out var idSchemaFactory)
+                ? idSchemaFactory()
+                : new OpenApiSchema { Type = "string" };
 
             // {id} route: GET by id + PUT + DELETE
             var idOperations = new Dictionary<OperationType, OpenApiOperation>();
@@ -258,7 +262,11 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                     OperationId = GetOperationId($"{entity.Route.ToLower()}/deleteById"),
                     Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                     Description = $"Delete {entity.EntityType.Name} by id",
-                    Responses = { ["200"] = new OpenApiResponse { Description = "Success" } },
+                    Responses =
+                    {
+                        ["204"] = new OpenApiResponse { Description = "No Content" },
+                        ["404"] = new OpenApiResponse { Description = "Not Found" }
+                    },
                     Parameters = new List<OpenApiParameter>
                     {
                         new() { Name = "id", Schema = idSchema, Required = true, In = ParameterLocation.Path }
@@ -395,6 +403,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                             OperationId = GetOperationId($"{entity.Route.ToLower()}/count"),
                             Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                             Description = $"Get count of items for {entity.EntityType.Name}",
+                            Parameters = BuildCountParameters(entity),
                             Responses =
                             {
                                 ["200"] = new OpenApiResponse
@@ -424,6 +433,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                                 OperationId = GetOperationId($"{entity.Route.ToLower()}/pagedresult"),
                                 Tags = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                                 Description = $"Get paged result of items for {entity.EntityType.Name}",
+                                Parameters = BuildGetListParameters(entity),
                                 Responses =
                                 {
                                     ["200"] = new OpenApiResponse
@@ -513,6 +523,7 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                                 OperationId = GetOperationId($"{entity.Route.ToLower()}/{cr.Slug}"),
                                 Tags        = new List<OpenApiTag> { new() { Name = entity.EntityType.Name } },
                                 Description = string.Join(" ", descParts),
+                                Parameters  = BuildGetListParameters(entity),
                                 Responses   = responses
                             }
                         }
@@ -524,25 +535,25 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
 
         foreach (var entity in registry.Entities)
         {
-            if (!swaggerDoc.Components.Schemas.ContainsKey(entity.EntityType.Name.ToLower()))
+            var schemaKey = entity.EntityType.Name.ToLower();
+            if (!swaggerDoc.Components.Schemas.ContainsKey(schemaKey))
             {
-                swaggerDoc.Components.Schemas.Add(entity.EntityType.Name.ToLower(), new OpenApiSchema
+                var entitySchema = new OpenApiSchema
                 {
                     Type = "object",
                     Properties = new Dictionary<string, OpenApiSchema>()
-                });
+                };
+                swaggerDoc.Components.Schemas.Add(schemaKey, entitySchema);
 
                 foreach (var prop in entity.Properties)
                 {
                     var type = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
                     if (type.IsEnum)
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
-                    }
+                        entitySchema.Properties.Add(prop.Name, BuildEnumSchema(type));
+                    else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
+                        entitySchema.Properties.Add(prop.Name, schemaFactory());
                     else
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, SchemaTypeMap[type]());
-                    }
+                        entitySchema.Properties.Add(prop.Name, new OpenApiSchema { Type = "object" });
                 }
             }
         }
@@ -550,11 +561,12 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
         if (registry.Entities.Any(x => x.ExposePagedResult)
             && !swaggerDoc.Components.Schemas.ContainsKey("pagedresult"))
         {
-            swaggerDoc.Components.Schemas.Add("pagedresult", new OpenApiSchema
+            var pagedSchema = new OpenApiSchema
             {
                 Type = "object",
                 Properties = new Dictionary<string, OpenApiSchema>()
-            });
+            };
+            swaggerDoc.Components.Schemas.Add("pagedresult", pagedSchema);
 
             foreach (var prop in typeof(OtterApiPagedResult).GetProperties())
             {
@@ -562,23 +574,18 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
                 if (!prop.PropertyType.IsGenericType)
                 {
                     if (type.IsEnum)
-                        {
-                            swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, BuildEnumSchema(type));
-                        }
+                        pagedSchema.Properties.Add(prop.Name, BuildEnumSchema(type));
+                    else if (SchemaTypeMap.TryGetValue(type, out var schemaFactory))
+                        pagedSchema.Properties.Add(prop.Name, schemaFactory());
                     else
-                    {
-                        swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, SchemaTypeMap[type]());
-                    }
+                        pagedSchema.Properties.Add(prop.Name, new OpenApiSchema { Type = "object" });
                 }
                 else
                 {
-                    swaggerDoc.Components.Schemas.Last().Value.Properties.Add(prop.Name, new OpenApiSchema
+                    pagedSchema.Properties.Add(prop.Name, new OpenApiSchema
                     {
-                        Type = "array",
-                        Items = new OpenApiSchema
-                        {
-                            Type = "object"
-                        }
+                        Type  = "array",
+                        Items = new OpenApiSchema { Type = "object" }
                     });
                 }
             }
@@ -591,6 +598,146 @@ public class OtterApiSwaggerDocumentFilter(OtterApiRegistry registry) : IDocumen
     {
         return string.Join("",
             path.Split("/", StringSplitOptions.RemoveEmptyEntries).Select(x => x.First().ToString().ToUpper() + x.Substring(1)));
+    }
+
+    /// <summary>
+    /// Builds the full set of query parameters for a GET list / pagedresult / custom-route operation:
+    /// per-property filter[], sort[], page, pagesize, include (when nav-props present), operator.
+    /// </summary>
+    private static List<OpenApiParameter> BuildGetListParameters(OtterApiEntity entity)
+    {
+        var parameters = new List<OpenApiParameter>();
+
+        // ── filter[{Prop}] — one entry per filterable property ────────────────
+        foreach (var prop in entity.Properties)
+        {
+            var supportedOps = OtterApiConfiguration.Operators
+                .Where(op => prop.PropertyType.IsOperatorSupported(op.Name))
+                .Select(op => op.Name)
+                .ToList();
+
+            if (supportedOps.Count == 0) continue;
+
+            parameters.Add(new OpenApiParameter
+            {
+                Name     = $"filter[{prop.Name}]",
+                In       = ParameterLocation.Query,
+                Required = false,
+                Schema   = new OpenApiSchema { Type = "string" },
+                Description = $"Filter by {prop.Name} (default operator: eq). " +
+                              $"Supported operators: {string.Join(", ", supportedOps)}. " +
+                              $"For non-eq use filter[{prop.Name}][operator]=value"
+            });
+        }
+
+        // ── sort[{Prop}] — one entry per sortable property ────────────────────
+        foreach (var prop in entity.Properties)
+        {
+            parameters.Add(new OpenApiParameter
+            {
+                Name     = $"sort[{prop.Name}]",
+                In       = ParameterLocation.Query,
+                Required = false,
+                Schema   = new OpenApiSchema
+                {
+                    Type = "string",
+                    Enum = new List<IOpenApiAny> { new OpenApiString("asc"), new OpenApiString("desc") }
+                },
+                Description = $"Sort by {prop.Name}: asc | desc"
+            });
+        }
+
+        // ── Pagination ────────────────────────────────────────────────────────
+        parameters.Add(new OpenApiParameter
+        {
+            Name     = "page",
+            In       = ParameterLocation.Query,
+            Required = false,
+            Schema   = new OpenApiSchema { Type = "integer", Format = "int32" },
+            Description = "Page number (1-based). Use together with pagesize."
+        });
+        parameters.Add(new OpenApiParameter
+        {
+            Name     = "pagesize",
+            In       = ParameterLocation.Query,
+            Required = false,
+            Schema   = new OpenApiSchema { Type = "integer", Format = "int32" },
+            Description = "Number of items per page. Clamped to MaxPageSize when configured."
+        });
+
+        // ── include ───────────────────────────────────────────────────────────
+        if (entity.NavigationProperties.Count > 0)
+        {
+            var navNames = string.Join(", ", entity.NavigationProperties.Select(p => p.Name));
+            parameters.Add(new OpenApiParameter
+            {
+                Name     = "include",
+                In       = ParameterLocation.Query,
+                Required = false,
+                Schema   = new OpenApiSchema { Type = "string" },
+                Description = $"Comma-separated navigation properties to eagerly load. Available: {navNames}"
+            });
+        }
+
+        // ── operator ──────────────────────────────────────────────────────────
+        parameters.Add(new OpenApiParameter
+        {
+            Name     = "operator",
+            In       = ParameterLocation.Query,
+            Required = false,
+            Schema   = new OpenApiSchema
+            {
+                Type = "string",
+                Enum = new List<IOpenApiAny> { new OpenApiString("and"), new OpenApiString("or") }
+            },
+            Description = "Logical operator to combine filter conditions: 'and' (default) or 'or'. " +
+                          "For per-group operators use operator[N]=or."
+        });
+
+        return parameters;
+    }
+
+    /// <summary>
+    /// Builds a reduced set of query parameters for the <c>/count</c> endpoint:
+    /// filter[] per property and operator — no sort, page, pagesize, or include.
+    /// </summary>
+    private static List<OpenApiParameter> BuildCountParameters(OtterApiEntity entity)
+    {
+        var parameters = new List<OpenApiParameter>();
+
+        foreach (var prop in entity.Properties)
+        {
+            var supportedOps = OtterApiConfiguration.Operators
+                .Where(op => prop.PropertyType.IsOperatorSupported(op.Name))
+                .Select(op => op.Name)
+                .ToList();
+
+            if (supportedOps.Count == 0) continue;
+
+            parameters.Add(new OpenApiParameter
+            {
+                Name     = $"filter[{prop.Name}]",
+                In       = ParameterLocation.Query,
+                Required = false,
+                Schema   = new OpenApiSchema { Type = "string" },
+                Description = $"Filter by {prop.Name} (default: eq). Operators: {string.Join(", ", supportedOps)}"
+            });
+        }
+
+        parameters.Add(new OpenApiParameter
+        {
+            Name     = "operator",
+            In       = ParameterLocation.Query,
+            Required = false,
+            Schema   = new OpenApiSchema
+            {
+                Type = "string",
+                Enum = new List<IOpenApiAny> { new OpenApiString("and"), new OpenApiString("or") }
+            },
+            Description = "Logical operator for filter conditions: 'and' (default) or 'or'."
+        });
+
+        return parameters;
     }
 
     /// <summary>

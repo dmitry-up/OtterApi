@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using OtterApi.Builders;
 using OtterApi.Configs;
 using OtterApi.Controllers;
+using OtterApi.Exceptions;
 using OtterApi.Interfaces;
 using OtterApi.Models;
 
@@ -17,12 +18,18 @@ namespace OtterApi.Processors;
 public class OtterApiRequestProcessor(
     IServiceProvider serviceProvider,
     IObjectModelValidator objectModelValidator,
-    OtterApiRegistry registry)
+    IOtterApiRegistry registry)
     : IOtterApiRequestProcessor
 {
     public async Task<object> GetData(HttpRequest request, Type type)
     {
-        return await JsonSerializer.DeserializeAsync(request.Body, type, registry.DeserializationOptions);
+        var result = await JsonSerializer.DeserializeAsync(request.Body, type, registry.DeserializationOptions);
+        if (result is null)
+            throw new OtterApiException(
+                "INVALID_BODY",
+                "Request body must not be null or empty.",
+                StatusCodes.Status400BadRequest);
+        return result;
     }
 
     public async Task<JsonObject> GetPatchData(HttpRequest request)
@@ -32,14 +39,12 @@ public class OtterApiRequestProcessor(
     }
 
 
-    public OtterApiRouteInfo GetRoutInfo(HttpRequest request)
+    public OtterApiRouteInfo GetRouteInfo(HttpRequest request)
     {
-        PathString path = null;
         var result = new OtterApiRouteInfo();
 
-        var apiEntity = registry.Entities
-            .Where(x => request.Path.StartsWithSegments(x.Route, out path))
-            .FirstOrDefault();
+        // O(1) lookup: at most two dictionary probes replace the previous O(n) linear scan.
+        var apiEntity = registry.FindEntityForPath(request.Path, out var path);
 
         result.Entity = apiEntity;
 
@@ -74,13 +79,12 @@ public class OtterApiRequestProcessor(
 
         if (apiEntity != null && string.IsNullOrWhiteSpace(result.Id) && request.Query?.Keys.Count > 0)
         {
-            var expressionBuilder = new OtterApiExpressionBuilder(request.Query, apiEntity);
+            // Pass DeserializationOptions so that in/nin correctly handles enum string names
+            // via OtterApiCaseInsensitiveEnumConverterFactory (same converter used for POST/PUT bodies).
+            var expressionBuilder = new OtterApiExpressionBuilder(request.Query, apiEntity, registry.DeserializationOptions);
 
-            var filterResult = expressionBuilder.BuildFilterResult();
-            result.FilterExpression = filterResult.Filter;
-            result.FilterValues = filterResult.Values;
-
-            result.SortExpression = expressionBuilder.BuildSortResult();
+            result.FilterApply = expressionBuilder.BuildFilterResult();
+            result.SortApply   = expressionBuilder.BuildSortResult();
 
             var pageResult = expressionBuilder.BuildPagingResult();
             result.Take = pageResult.Take;

@@ -12,17 +12,19 @@ public class OtterApiPagingOtterApiExpression(IQueryCollection queryString, stri
         var pageSize = 0U;
         var page = 1U;
 
-        foreach (var key in queryString.Keys.Where(x => x.ToLower().StartsWith(prefix)))
+        foreach (var key in queryString.Keys.Where(x => x.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
         {
-            if (key.ToLower() == $"{prefix}size")
+            if (key.Equals($"{prefix}size", StringComparison.OrdinalIgnoreCase))
             {
                 if (uint.TryParse(queryString[key].ToString(), out var parsedSize))
                     pageSize = parsedSize;
             }
 
-            if (key.ToLower() == prefix)
+            if (key.Equals(prefix, StringComparison.OrdinalIgnoreCase))
             {
-                if (uint.TryParse(queryString[key].ToString(), out var parsedPage))
+                // parsedPage == 0 would cause uint underflow in (page - 1U) * pageSize → negative Skip.
+                // Treat page=0 the same as page=1 (first page).
+                if (uint.TryParse(queryString[key].ToString(), out var parsedPage) && parsedPage >= 1)
                     page = parsedPage;
             }
         }

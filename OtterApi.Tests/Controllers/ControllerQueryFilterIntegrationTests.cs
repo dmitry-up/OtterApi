@@ -127,8 +127,7 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.FilterExpression = "TenantId == @0";
-        route.FilterValues     = [1];
+        route.FilterApply = q => ((IQueryable<TestItem>)q).Where(i => i.TenantId == 1);
 
         var items = Items(await ctrl.GetAsync(route));
 
@@ -326,6 +325,104 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var result = await ctrl.PatchAsync(route, patch);
 
         Assert.IsType<OkObjectResult>(result);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // DELETE — filtered-out record returns 404 (security: cross-tenant guard)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task DeleteAsync_Returns404_WhenRecordFilteredOut()
+    {
+        // Gamma (Id=3) exists in DB but IsActive=false — the filter hides it.
+        // Before the fix, DeleteAsync used FindByIdAsync which bypassed filters,
+        // so Gamma could be deleted even though it was invisible via GET.
+        var entity = BuildEntityWithFilter(item => item.IsActive);
+        _db.ChangeTracker.Clear();
+        var ctrl = BuildController(entity);
+
+        var result = await ctrl.DeleteAsync(ByIdRoute(entity, "3"));
+
+        Assert.IsType<NotFoundObjectResult>(result);
+
+        // Verify the record was NOT actually deleted from the database.
+        var still = await _db.Items.FindAsync(3);
+        Assert.NotNull(still);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_Succeeds_WhenRecordPassesFilter()
+    {
+        // Alpha (Id=1) is active — passes the filter and should be deleted normally.
+        var entity = BuildEntityWithFilter(item => item.IsActive);
+        _db.ChangeTracker.Clear();
+        var ctrl = BuildController(entity);
+
+        var result = await ctrl.DeleteAsync(ByIdRoute(entity, "1"));
+
+        Assert.Equal(204, result.StatusCode);
+
+        // Verify the record was actually removed.
+        var gone = await _db.Items.FindAsync(1);
+        Assert.Null(gone);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_NoFilter_DeletesAnyExistingRecord()
+    {
+        // Without a filter all records are visible and deletable.
+        var entity = BuildEntity();
+        _db.ChangeTracker.Clear();
+        var ctrl = BuildController(entity);
+
+        var result = await ctrl.DeleteAsync(ByIdRoute(entity, "3")); // Gamma — inactive but no filter
+
+        Assert.Equal(204, result.StatusCode);
+
+        var gone = await _db.Items.FindAsync(3);
+        Assert.Null(gone);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_MultipleFilters_Returns404_WhenAnyFilterFails()
+    {
+        // Beta (Id=2): IsActive=true but TenantId=2 — passes filter1, fails filter2.
+        // Must NOT be deletable when the combined filter excludes it.
+        var options = new OtterApi.Configs.OtterApiOptions { Path = "/api" };
+        var entity  = options.Entity<TestItem>("/items")
+            .WithQueryFilter(i => i.IsActive)
+            .WithQueryFilter(i => i.TenantId == 1)
+            .Build(typeof(TestDbContext), options);
+
+        _db.ChangeTracker.Clear();
+        var ctrl   = BuildController(entity);
+        var result = await ctrl.DeleteAsync(ByIdRoute(entity, "2")); // Beta
+
+        Assert.IsType<NotFoundObjectResult>(result);
+
+        // Record must still be in the database.
+        var still = await _db.Items.FindAsync(2);
+        Assert.NotNull(still);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_MultipleFilters_Succeeds_WhenAllFiltersPass()
+    {
+        // Alpha (Id=1): IsActive=true, TenantId=1 — passes both filters.
+        var options = new OtterApi.Configs.OtterApiOptions { Path = "/api" };
+        var entity  = options.Entity<TestItem>("/items")
+            .WithQueryFilter(i => i.IsActive)
+            .WithQueryFilter(i => i.TenantId == 1)
+            .Build(typeof(TestDbContext), options);
+
+        _db.ChangeTracker.Clear();
+        var ctrl   = BuildController(entity);
+        var result = await ctrl.DeleteAsync(ByIdRoute(entity, "1")); // Alpha
+
+        Assert.Equal(204, result.StatusCode);
+
+        var gone = await _db.Items.FindAsync(1);
+        Assert.Null(gone);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -542,7 +639,7 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.SortExpression = "Name asc";
+        route.SortApply = q => ((IQueryable<TestItem>)q).OrderBy(i => i.Name);
 
         var names = Items(await ctrl.GetAsync(route)).Select(i => i.Name).ToList();
 
@@ -557,9 +654,9 @@ public class ControllerQueryFilterIntegrationTests : IDisposable
         var ctrl   = BuildController(entity);
 
         var route = CollectionRoute(entity);
-        route.SortExpression = "Id asc";
-        route.Skip           = 1;
-        route.Take           = 2;
+        route.SortApply = q => ((IQueryable<TestItem>)q).OrderBy(i => i.Id);
+        route.Skip      = 1;
+        route.Take      = 2;
 
         var ids = Items(await ctrl.GetAsync(route)).Select(i => i.Id).ToList();
 

@@ -37,7 +37,7 @@ public class ConfigurationTests
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // IsOperatorSuported  (note: intentional typo in the library method name)
+    // IsOperatorSupported
     // ══════════════════════════════════════════════════════════════════════════
 
     // ── String operators ──────────────────────────────────────────────────────
@@ -49,9 +49,9 @@ public class ConfigurationTests
     [InlineData("nlike")]
     [InlineData("in")]
     [InlineData("nin")]
-    public void IsOperatorSuported_ReturnsTrue_ForStringCompatibleOperators(string op)
+    public void IsOperatorSupported_ReturnsTrue_ForStringCompatibleOperators(string op)
     {
-        Assert.True(typeof(string).IsOperatorSuported(op));
+        Assert.True(typeof(string).IsOperatorSupported(op));
     }
 
     [Theory]
@@ -59,9 +59,9 @@ public class ConfigurationTests
     [InlineData("lteq")]
     [InlineData("gt")]
     [InlineData("gteq")]
-    public void IsOperatorSuported_ReturnsFalse_ForNumericOnlyOperators_OnString(string op)
+    public void IsOperatorSupported_ReturnsFalse_ForNumericOnlyOperators_OnString(string op)
     {
-        Assert.False(typeof(string).IsOperatorSuported(op));
+        Assert.False(typeof(string).IsOperatorSupported(op));
     }
 
     // ── Numeric value-type operators ──────────────────────────────────────────
@@ -75,17 +75,17 @@ public class ConfigurationTests
     [InlineData("gteq")]
     [InlineData("in")]
     [InlineData("nin")]
-    public void IsOperatorSuported_ReturnsTrue_ForIntCompatibleOperators(string op)
+    public void IsOperatorSupported_ReturnsTrue_ForIntCompatibleOperators(string op)
     {
-        Assert.True(typeof(int).IsOperatorSuported(op));
+        Assert.True(typeof(int).IsOperatorSupported(op));
     }
 
     [Theory]
     [InlineData("like")]
     [InlineData("nlike")]
-    public void IsOperatorSuported_ReturnsFalse_ForStringOnlyOperators_OnInt(string op)
+    public void IsOperatorSupported_ReturnsFalse_ForStringOnlyOperators_OnInt(string op)
     {
-        Assert.False(typeof(int).IsOperatorSuported(op));
+        Assert.False(typeof(int).IsOperatorSupported(op));
     }
 
     // ── Guid operators ────────────────────────────────────────────────────────
@@ -95,9 +95,9 @@ public class ConfigurationTests
     [InlineData("neq")]
     [InlineData("in")]
     [InlineData("nin")]
-    public void IsOperatorSuported_ReturnsTrue_ForGuidCompatibleOperators(string op)
+    public void IsOperatorSupported_ReturnsTrue_ForGuidCompatibleOperators(string op)
     {
-        Assert.True(typeof(Guid).IsOperatorSuported(op));
+        Assert.True(typeof(Guid).IsOperatorSupported(op));
     }
 
     [Theory]
@@ -107,9 +107,9 @@ public class ConfigurationTests
     [InlineData("gteq")]
     [InlineData("like")]
     [InlineData("nlike")]
-    public void IsOperatorSuported_ReturnsFalse_ForUnsupportedOperators_OnGuid(string op)
+    public void IsOperatorSupported_ReturnsFalse_ForUnsupportedOperators_OnGuid(string op)
     {
-        Assert.False(typeof(Guid).IsOperatorSuported(op));
+        Assert.False(typeof(Guid).IsOperatorSupported(op));
     }
 
     // ── Nullable type unwrapping ──────────────────────────────────────────────
@@ -118,17 +118,17 @@ public class ConfigurationTests
     [InlineData("eq")]
     [InlineData("gt")]
     [InlineData("lt")]
-    public void IsOperatorSuported_UnwrapsNullableType_BeforeChecking(string op)
+    public void IsOperatorSupported_UnwrapsNullableType_BeforeChecking(string op)
     {
         // int? should behave exactly like int
-        Assert.True(typeof(int?).IsOperatorSuported(op));
+        Assert.True(typeof(int?).IsOperatorSupported(op));
     }
 
     [Fact]
-    public void IsOperatorSuported_NullableGuid_BehavesLikeGuid()
+    public void IsOperatorSupported_NullableGuid_BehavesLikeGuid()
     {
-        Assert.True(typeof(Guid?).IsOperatorSuported("eq"));
-        Assert.False(typeof(Guid?).IsOperatorSuported("lt"));
+        Assert.True(typeof(Guid?).IsOperatorSupported("eq"));
+        Assert.False(typeof(Guid?).IsOperatorSupported("lt"));
     }
 
     // ── Case-insensitive operator name matching ───────────────────────────────
@@ -137,18 +137,18 @@ public class ConfigurationTests
     [InlineData("EQ")]
     [InlineData("Eq")]
     [InlineData("LIKE")]
-    public void IsOperatorSuported_Operator_IsCaseInsensitive(string op)
+    public void IsOperatorSupported_Operator_IsCaseInsensitive(string op)
     {
-        Assert.True(typeof(string).IsOperatorSuported(op));
+        Assert.True(typeof(string).IsOperatorSupported(op));
     }
 
     // ── Unknown operator ──────────────────────────────────────────────────────
 
     [Fact]
-    public void IsOperatorSuported_ReturnsFalse_ForUnknownOperator()
+    public void IsOperatorSupported_ReturnsFalse_ForUnknownOperator()
     {
-        Assert.False(typeof(int).IsOperatorSuported("between"));
-        Assert.False(typeof(string).IsOperatorSuported("startswith"));
+        Assert.False(typeof(int).IsOperatorSupported("between"));
+        Assert.False(typeof(string).IsOperatorSupported("startswith"));
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -163,30 +163,4 @@ public class ConfigurationTests
         foreach (var expected in new[] { "eq", "neq", "like", "nlike", "lt", "lteq", "gt", "gteq", "in", "nin" })
             Assert.Contains(expected, names);
     }
-
-    [Fact]
-    public void Operators_AllHaveNonEmptyExpression()
-    {
-        foreach (var op in OtterApiConfiguration.Operators)
-            Assert.False(string.IsNullOrWhiteSpace(op.Expression));
-    }
-
-    [Fact]
-    public void Operators_AllExpressionsContainPropertyNamePlaceholder()
-    {
-        // Every filter expression must reference {propertyName} so the builder can substitute it
-        foreach (var op in OtterApiConfiguration.Operators)
-            Assert.True(op.Expression.Contains("{propertyName}"),
-                $"Operator '{op.Name}' expression is missing {{propertyName}} placeholder.");
-    }
-
-    [Fact]
-    public void Operators_AllExpressionsContainIndexPlaceholder()
-    {
-        foreach (var op in OtterApiConfiguration.Operators)
-            Assert.True(op.Expression.Contains("{index}"),
-                $"Operator '{op.Name}' expression is missing {{index}} placeholder.");
-    }
 }
-
-

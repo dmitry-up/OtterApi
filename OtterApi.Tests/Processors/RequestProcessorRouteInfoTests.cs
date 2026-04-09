@@ -8,7 +8,7 @@ using Xunit;
 namespace OtterApi.Tests.Processors;
 
 /// <summary>
-/// Contract: OtterApiRequestProcessor.GetRoutInfo maps an incoming HTTP path
+/// Contract: OtterApiRequestProcessor.GetRouteInfo maps an incoming HTTP path
 /// to the correct OtterApiRouteInfo fields (entity, id, count, paged-result,
 /// filter / sort / paging / include expressions).
 ///
@@ -83,10 +83,8 @@ public class RequestProcessorRouteInfoTests
         {
             var builder = new OtterApi.Builders.OtterApiExpressionBuilder(request.Query, apiEntity);
 
-            var filterResult = builder.BuildFilterResult();
-            result.FilterExpression = filterResult.Filter;
-            result.FilterValues     = filterResult.Values;
-            result.SortExpression   = builder.BuildSortResult();
+            result.FilterApply = builder.BuildFilterResult();
+            result.SortApply   = builder.BuildSortResult();
 
             var pageResult  = builder.BuildPagingResult();
             result.Take     = pageResult.Take;
@@ -215,9 +213,8 @@ public class RequestProcessorRouteInfoTests
 
         var info = GetRouteInfo(registry, request);
 
-        Assert.Equal("Name == @0", info.FilterExpression);
-        Assert.Single(info.FilterValues!);
-        Assert.Equal("Widget", info.FilterValues![0]);
+        // FilterApply is a compiled delegate — just verify it was created
+        Assert.NotNull(info.FilterApply);
     }
 
     [Fact]
@@ -229,7 +226,7 @@ public class RequestProcessorRouteInfoTests
 
         var info = GetRouteInfo(registry, request);
 
-        Assert.Null(info.FilterExpression);
+        Assert.Null(info.FilterApply);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -249,7 +246,7 @@ public class RequestProcessorRouteInfoTests
         var info = GetRouteInfo(registry, ctx.Request);
 
         Assert.Equal("5",  info.Id);
-        Assert.Null(info.FilterExpression);
+        Assert.Null(info.FilterApply);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -265,7 +262,7 @@ public class RequestProcessorRouteInfoTests
 
         var info = GetRouteInfo(registry, request);
 
-        Assert.Equal("Name asc", info.SortExpression);
+        Assert.NotNull(info.SortApply);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

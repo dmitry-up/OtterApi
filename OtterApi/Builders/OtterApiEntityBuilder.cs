@@ -1,9 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OtterApi.Configs;
 using OtterApi.Enums;
+using OtterApi.Helpers;
 using OtterApi.Interfaces;
 using OtterApi.Models;
 
@@ -14,6 +16,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private readonly string route;
     private bool authorize;
     private string? deletePolicy;
+    private string? patchPolicy;
     private string? entityPolicy;
     private bool exposePagedResult;
     private string? getPolicy;
@@ -64,6 +67,12 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     public OtterApiEntityBuilder<T> WithDeletePolicy(string policy)
     {
         deletePolicy = policy;
+        return this;
+    }
+
+    public OtterApiEntityBuilder<T> WithPatchPolicy(string policy)
+    {
+        patchPolicy = policy;
         return this;
     }
 
@@ -166,10 +175,11 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     {
         var cr = new OtterApiCustomRoute
         {
-            Slug   = slug.Trim('/').ToLowerInvariant(),
-            Sort   = sort,
-            Take   = take,
-            Single = single
+            Slug     = slug.Trim('/').ToLowerInvariant(),
+            Sort     = sort,
+            SortApply = sort != null ? q => OtterApiDynamicLinq.OrderBy(q, sort) : null,
+            Take     = take,
+            Single   = single
         };
 
         if (filter != null)
@@ -220,6 +230,44 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
         var castToQ    = Expression.Convert(propAccess, typeof(IQueryable));
         var getDbSet   = Expression.Lambda<Func<DbContext, IQueryable>>(castToQ, ctxParam).Compile();
 
+        // ── Resolve primary key: [Key] attribute → "Id" convention → "{ClassName}Id" convention ──
+        var idPropInfo =
+            entityType.GetProperties().FirstOrDefault(p => p.IsDefined(typeof(KeyAttribute), false))
+            ?? entityType.GetProperties().FirstOrDefault(p =>
+                p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase))
+            ?? entityType.GetProperties().FirstOrDefault(p =>
+                p.Name.Equals($"{entityType.Name}Id", StringComparison.OrdinalIgnoreCase));
+
+        // ── Compile WhereId and OrderByIdDesc delegates ───────────────────────
+
+        Func<IQueryable, object, IQueryable> whereId = (q, _) => q; // no-op for keyless
+        Func<IQueryable, IQueryable> orderByIdDesc   = q => q;      // no-op for keyless
+
+        if (idPropInfo != null)
+        {
+            var keyType       = idPropInfo.PropertyType;
+            var underlying    = Nullable.GetUnderlyingType(keyType) ?? keyType;
+            var idPropCapture = idPropInfo;
+
+            whereId = (q, id) =>
+            {
+                var p         = Expression.Parameter(typeof(T), "x");
+                var propExpr  = Expression.Property(p, idPropCapture);
+                var raw       = id.GetType() == underlying ? id : Convert.ChangeType(id, underlying);
+                var constExpr = keyType != underlying
+                    ? Expression.Convert(Expression.Constant(raw, underlying), keyType)
+                    : (Expression)Expression.Constant(raw, keyType);
+                var lambda    = Expression.Lambda<Func<T, bool>>(Expression.Equal(propExpr, constExpr), p);
+                return ((IQueryable<T>)q).Where(lambda);
+            };
+
+            var odParam    = Expression.Parameter(typeof(T), "x");
+            var odKeyExpr  = Expression.Lambda(Expression.Property(odParam, idPropInfo), odParam);
+            var odMethod   = OtterApiDynamicLinq.QueryableOrderByDescending
+                .MakeGenericMethod(typeof(T), keyType);
+            orderByIdDesc  = q => (IQueryable)odMethod.Invoke(null, [q, odKeyExpr])!;
+        }
+
         return new OtterApiEntity
         {
             Route = route,
@@ -227,6 +275,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             PostPolicy = postPolicy,
             PutPolicy = putPolicy,
             DeletePolicy = deletePolicy,
+            PatchPolicy = patchPolicy,
             EntityPolicy = entityPolicy,
             Authorize = authorize,
             DbSet = dbSetProperty,
@@ -241,17 +290,23 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
                 .Where(x => x.PropertyType.IsTypeSupported()).ToList(),
             NavigationProperties = entityType.GetProperties()
                 .Where(x => !x.PropertyType.IsTypeSupported()).ToList(),
-            Id = entityType.GetProperties()
-                .FirstOrDefault(x => x.IsDefined(typeof(KeyAttribute), false)),
+            Id = idPropInfo,
             PreSaveHandlers  = preSaveHandlers,
             PostSaveHandlers = postSaveHandlers,
 
             // ── Typed delegates compiled once from T ────────────────────────────
-            FindByIdAsync = async (ctx, id) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }),
+            FindByIdAsync = async (ctx, id, ct) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }, ct),
             AsNoTracking  = q => ((IQueryable<T>)q).AsNoTracking(),
             CountAsync    = (q, ct) => ((IQueryable<T>)q).CountAsync(ct),
             Include       = (q, nav) => ((IQueryable<T>)q).Include(nav),
-            GetDbSet      = getDbSet
+            GetDbSet      = getDbSet,
+            ToListAsync   = async (q, ct) =>
+            {
+                var typed = await ((IQueryable<T>)q).ToListAsync(ct);
+                return typed.ConvertAll(static item => (object)item);
+            },
+            WhereId       = whereId,
+            OrderByIdDesc = orderByIdDesc
         };
     }
 }

@@ -288,6 +288,27 @@ public class ControllerPatchIntegrationTests : IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    // Primary key is immutable — Id in patch body must be silently ignored
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task PatchAsync_IdInPatchBody_IsIgnored_RecordIdUnchanged()
+    {
+        _db.ChangeTracker.Clear();
+
+        // Try to change Id from 1 to 999 via patch body — must be silently ignored
+        var result = await _ctrl.PatchAsync(RouteInfo("1"), Patch(new { id = 999, name = "Renamed" }));
+
+        Assert.IsType<OkObjectResult>(result);
+
+        // Id must still be 1 in the database
+        var product = FromDb(1);
+        Assert.NotNull(product);          // record with Id=1 still exists
+        Assert.Equal(1,         product.Id);
+        Assert.Equal("Renamed", product.Name); // other field was correctly updated
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
     // OtterApiCrudOperation.Patch is in All and is a distinct flag
     // ══════════════════════════════════════════════════════════════════════════
 
