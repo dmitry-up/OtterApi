@@ -1,5 +1,7 @@
 # OtterApi
 
+[otter-api.org](https://otter-api.org/) | [Documentation](https://otter-api.org/docs/getting-started.html)
+
 ![OtterApi](https://raw.githubusercontent.com/dmitry-up/OtterApi/refs/heads/master/icon.png)
 
 [![NuGet](https://img.shields.io/nuget/v/OtterApi.svg)](https://www.nuget.org/packages/OtterApi)

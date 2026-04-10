@@ -7,7 +7,7 @@
         <LangVersion>latestmajor</LangVersion>
 
         <!-- Versioning -->
-        <ReleaseVersion>2.0.0</ReleaseVersion>
+        <ReleaseVersion>2.0.1</ReleaseVersion>
         <Version>$(ReleaseVersion)</Version>
         <FileVersion>$(ReleaseVersion)</FileVersion>
         <AssemblyVersion>$(ReleaseVersion)</AssemblyVersion>
@@ -22,7 +22,7 @@
         <PackageTags>aspnetcore;efcore;rest;api;crud;code-generation;swagger;openapi</PackageTags>
 
         <!-- Links -->
-        <PackageProjectUrl>https://github.com/dmitry-up/OtterApi</PackageProjectUrl>
+        <PackageProjectUrl>https://otter-api.org</PackageProjectUrl>
         <RepositoryUrl>https://github.com/dmitry-up/OtterApi</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
 
