@@ -43,12 +43,15 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
             sort:   "Price asc",
             take:   10);
 
-    // Hide cancelled and pending orders from the public listing.
+    // Soft-delete: DELETE sets IsDeleted=true instead of removing the row.
+    // The auto-registered query filter (IsDeleted==false) hides soft-deleted orders
+    // from all GET endpoints automatically — no extra WithQueryFilter needed.
     // Custom routes:
     //   GET /api/orders/latest — the most recently confirmed/shipped/delivered order
     options.Entity<Order>("orders")
-        .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post)
+        .Allow(OtterApiCrudOperation.Get | OtterApiCrudOperation.Post | OtterApiCrudOperation.Delete)
         .ExposePagedResult()
+        .WithSoftDelete(o => o.IsDeleted)
         .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
         // Scoped filter: каждый пользователь видит только свои заказы (по email из токена)
         // .WithScopedQueryFilter(sp =>

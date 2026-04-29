@@ -7,7 +7,7 @@
         <LangVersion>latestmajor</LangVersion>
 
         <!-- Versioning -->
-        <ReleaseVersion>2.0.1</ReleaseVersion>
+        <ReleaseVersion>2.0.2</ReleaseVersion>
         <Version>$(ReleaseVersion)</Version>
         <FileVersion>$(ReleaseVersion)</FileVersion>
         <AssemblyVersion>$(ReleaseVersion)</AssemblyVersion>

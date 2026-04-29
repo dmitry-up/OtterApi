@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Linq.Expressions;
+using System.Reflection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OtterApi.Configs;
@@ -27,6 +28,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private readonly List<OtterApiCustomRoute> customRoutes = [];
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> preSaveHandlers = [];
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> postSaveHandlers = [];
+    private Action<object, bool>? softDeleteSetter;
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -155,6 +157,27 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
 
     public OtterApiEntityBuilder<T> AfterSave(IOtterApiAfterSaveHandler<T> handler)
         => AfterSave(handler.AfterSaveAsync);
+
+    /// <summary>
+    /// Enables soft-delete for this entity: <c>DeleteAsync</c> sets the specified boolean
+    /// property to <c>true</c> instead of calling <c>dbContext.Remove(entity)</c>.
+    /// Automatically registers a query filter so soft-deleted records are invisible to all GET endpoints.
+    /// </summary>
+    /// <param name="isDeletedFlag">Simple boolean property selector, e.g. <c>p => p.IsDeleted</c>.</param>
+    public OtterApiEntityBuilder<T> WithSoftDelete(Expression<Func<T, bool>> isDeletedFlag)
+    {
+        if (isDeletedFlag.Body is not MemberExpression { Member: PropertyInfo prop })
+            throw new ArgumentException(
+                "WithSoftDelete requires a simple boolean property selector, e.g. p => p.IsDeleted.",
+                nameof(isDeletedFlag));
+
+        var param   = isDeletedFlag.Parameters[0];
+        var notExpr = Expression.Lambda<Func<T, bool>>(Expression.Not(isDeletedFlag.Body), param);
+        queryFilters.Add(q => ((IQueryable<T>)q).Where(notExpr));
+
+        softDeleteSetter = (obj, val) => prop.SetValue(obj, val);
+        return this;
+    }
 
     /// <summary>
     /// Registers a named custom GET route exposed at <c>{entityRoute}/{slug}</c>.
@@ -292,6 +315,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             Id = idPropInfo,
             PreSaveHandlers  = preSaveHandlers,
             PostSaveHandlers = postSaveHandlers,
+            SoftDeleteSetter = softDeleteSetter,
 
             // ── Typed delegates compiled once from T ────────────────────────────
             FindByIdAsync = async (ctx, id, ct) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }, ct),

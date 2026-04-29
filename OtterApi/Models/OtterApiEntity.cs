@@ -65,6 +65,13 @@ public class OtterApiEntity
     /// <summary>Handlers invoked after SaveChangesAsync. Multiple handlers run in registration order.</summary>
     public List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> PostSaveHandlers { get; init; } = [];
 
+    /// <summary>
+    /// When non-null, soft-delete is enabled: DeleteAsync sets this flag to <c>true</c>
+    /// instead of calling <c>dbContext.Remove(entity)</c>.
+    /// Registered via <c>.WithSoftDelete(p => p.IsDeleted)</c>.
+    /// </summary>
+    public Action<object, bool>? SoftDeleteSetter { get; init; }
+
     // ── Typed delegates — compiled once at startup, replace dynamic dispatch on every request ──
 
     /// <summary>

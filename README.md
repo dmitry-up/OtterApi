@@ -42,6 +42,7 @@
   - [Lambda Approach](#lambda-approach)
   - [Handler Approach (Interface)](#handler-approach-interface)
   - [Chaining Multiple Hooks](#chaining-multiple-hooks)
+- [Soft Delete](#soft-delete)
 - [Error Handling — OtterApiException](#error-handling--otterApiexception)
 - [Keyless Entities](#keyless-entities)
 - [Swagger](#swagger)
@@ -1116,6 +1117,62 @@ Lambdas and interface-based handlers can be freely mixed in the same chain.
 
 ---
 
+## Soft Delete
+
+`.WithSoftDelete(p => p.IsDeleted)` enables soft-delete for an entity. When a `DELETE` request is received, OtterApi **sets the specified boolean property to `true`** instead of calling `dbContext.Remove(entity)`. The record stays in the database and is never physically removed.
+
+A query filter `p => !p.IsDeleted` is **automatically registered** so soft-deleted records are invisible to all GET endpoints (list, by-Id, count, pagedresult, custom routes) — no extra `.WithQueryFilter()` call is needed.
+
+### Usage
+
+```csharp
+options.Entity<Order>("orders")
+    .WithSoftDelete(o => o.IsDeleted);
+```
+
+After this:
+
+| Request | Behaviour |
+|---|---|
+| `DELETE /api/orders/5` | Sets `IsDeleted = true`, returns `204 No Content` |
+| `DELETE /api/orders/5` (already soft-deleted) | **404** — hidden by auto query filter |
+| `GET /api/orders` | Returns only orders where `IsDeleted == false` |
+| `GET /api/orders/5` (soft-deleted) | **404** |
+| `GET /api/orders/count` | Counts only non-deleted orders |
+
+### Combining with BeforeSave
+
+`BeforeSave` / `AfterSave` hooks still fire on soft-delete. The flag is set **before** `BeforeSave` runs, so the hook receives the entity with `IsDeleted = true`. Use this to populate additional audit fields:
+
+```csharp
+options.Entity<Order>("orders")
+    .WithSoftDelete(o => o.IsDeleted)
+    .BeforeSave((ctx, order, original, op) =>
+    {
+        if (op == OtterApiCrudOperation.Delete)
+            order.DeletedAt = DateTime.UtcNow;
+    });
+```
+
+### Combining with other query filters
+
+`.WithSoftDelete` registers the `!IsDeleted` filter first. Any subsequent `.WithQueryFilter` or `.WithScopedQueryFilter` calls are chained on top with **AND semantics**:
+
+```csharp
+options.Entity<Order>("orders")
+    .WithSoftDelete(o => o.IsDeleted)
+    .WithQueryFilter(o => o.Status != OrderStatus.Cancelled);
+    // effective filter: !IsDeleted AND Status != Cancelled
+```
+
+### Constraints
+
+- The expression must be a simple property selector, e.g. `o => o.IsDeleted`. Computed expressions such as `o => !o.IsDeleted` or `o => true` throw `ArgumentException` at startup.
+- Only `bool` properties are supported.
+- `PUT` / `PATCH` on a soft-deleted record return **404** (the auto query filter is applied to those operations too).
+
+---
+
 ## Error Handling — OtterApiException
 
 To return a structured error response from a `BeforeSave` or `AfterSave` hook, throw `OtterApiException`:
@@ -1455,6 +1512,8 @@ Authorization: Bearer <token>
 | **`WithCustomRoute` — unique slugs** | Each slug must be unique per entity. Duplicate slugs throw `InvalidOperationException` at startup. |
 | **`WithCustomRoute` — GET only** | Custom routes are read-only GET endpoints. POST, PUT, PATCH, and DELETE are not supported on custom route paths. |
 | **Target framework** | .NET 8.0 is required. |
+| **Soft delete — bool only** | `.WithSoftDelete` only accepts a `bool` property selector. `DateTime?`-based soft-delete (setting a `DeletedAt` timestamp) is not built-in — use a `BeforeSave` hook to populate audit fields alongside the bool flag. |
+| **Soft delete — expression constraint** | The expression passed to `.WithSoftDelete` must be a direct property access (`p => p.IsDeleted`). Computed or constant expressions throw `ArgumentException` at startup. |
 | **BeforeSave / AfterSave and transactions** | Pre-save and post-save handlers are **not** wrapped in a database transaction. `SaveChangesAsync` is called between the two handler lists. If a `PostSaveHandler` throws (e.g. while publishing an event to Kafka or sending an email), the database changes are already committed and will **not** be rolled back. If you need atomic side-effects, manage the transaction manually inside a `BeforeSave` handler (using `DbContext.Database.BeginTransactionAsync`), or implement the Outbox pattern. |
 | **Optimistic concurrency** | If your entities use `[ConcurrencyCheck]` or a row-version / timestamp column, a concurrent update will throw `DbUpdateConcurrencyException`. OtterApi catches this as a generic `DbUpdateException` and returns `422 Unprocessable Entity` with code `DB_UPDATE_ERROR`. It is **not** mapped to `409 Conflict`. If optimistic concurrency is important for your domain, handle `DbUpdateConcurrencyException` in a `BeforeSave` / `AfterSave` handler or in a wrapping middleware. |
 | **PATCH and custom `JsonSerializerOptions`** | The PATCH document (the top-level `JsonObject`) is parsed with a **fresh default** `JsonSerializerOptions` (`JsonSerializerDefaults.Web`), regardless of any custom options passed via `options.JsonSerializerOptions`. This is intentional: JSON Merge Patch (RFC 7396) documents have no naming-policy requirements. Custom converters and naming policies **are** applied when each individual field value is deserialized from the patch node. All other verbs (POST, PUT) fully respect the custom options. |

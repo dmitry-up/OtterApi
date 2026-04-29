@@ -259,7 +259,11 @@ public class OtterApiRestController(
         if (entity == null)
             return new NotFoundObjectResult(null);
 
-        dbContext.Remove(entity);
+        if (otterApiRouteInfo.Entity.SoftDeleteSetter != null)
+            otterApiRouteInfo.Entity.SoftDeleteSetter(entity, true);
+        else
+            dbContext.Remove(entity);
+
         foreach (var h in otterApiRouteInfo.Entity.PreSaveHandlers)
             await h(dbContext, entity, entity, OtterApiCrudOperation.Delete);
         await dbContext.SaveChangesAsync(ct);

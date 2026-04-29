@@ -27,6 +27,8 @@ public class Order
 
     public DateTime CreatedAt { get; set; }
 
+    public bool IsDeleted { get; set; }
+
     public Product? Product { get; set; }
 }
 

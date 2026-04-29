@@ -38,15 +38,24 @@ public class TestItem
     public int TenantId       { get; set; }
 }
 
+/// <summary>Entity used for soft-delete integration tests.</summary>
+public class TestSoftDeleteItem
+{
+    [Key] public int Id    { get; set; }
+    public string Name     { get; set; } = string.Empty;
+    public bool IsDeleted  { get; set; }
+}
+
 // ── DbContext ──────────────────────────────────────────────────────────────────
 
 public class TestDbContext : DbContext
 {
     public TestDbContext(DbContextOptions<TestDbContext> options) : base(options) { }
 
-    public DbSet<TestProduct>  Products   { get; set; }
-    public DbSet<TestCategory> Categories { get; set; }
-    public DbSet<TestItem>     Items      { get; set; }
+    public DbSet<TestProduct>         Products         { get; set; }
+    public DbSet<TestCategory>        Categories       { get; set; }
+    public DbSet<TestItem>            Items            { get; set; }
+    public DbSet<TestSoftDeleteItem>  SoftDeleteItems  { get; set; }
 }
 
 public class KeylessDbContext : DbContext
