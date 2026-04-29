@@ -1139,6 +1139,8 @@ After this:
 | `GET /api/orders` | Returns only orders where `IsDeleted == false` |
 | `GET /api/orders/5` (soft-deleted) | **404** |
 | `GET /api/orders/count` | Counts only non-deleted orders |
+| `PUT /api/orders/5` (soft-deleted) | **404** — auto query filter applied before update |
+| `PATCH /api/orders/5` (soft-deleted) | **404** — auto query filter applied before update |
 
 ### Combining with BeforeSave
 

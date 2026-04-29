@@ -70,6 +70,8 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
         {
             if (op == OtterApiCrudOperation.Post)
                 Console.WriteLine($"[Audit] New order: {order.CustomerName} → {order.TotalPrice:C}");
+            if (op == OtterApiCrudOperation.Delete)
+                Console.WriteLine($"[Audit] Order #{order.Id} soft-deleted");
         })
         .AfterSave(new OrderAfterSaveHandler());
 });

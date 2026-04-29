@@ -29,12 +29,15 @@ public static class DemoDataSeeder
         );
 
         // ── Orders ────────────────────────────────────────────────
+        // Id=6 is soft-deleted — invisible via GET but remains in the database.
+        // Try: GET /api/orders (returns 3 items), GET /api/orders/6 (404).
         db.Orders.AddRange(
             new Order { Id = 1, CustomerName = "Alice Johnson",  CustomerEmail = "alice@example.com",  ProductId = 1, Quantity = 1, TotalPrice = 1299.99m, Status = OrderStatus.Delivered, CreatedAt = DateTime.UtcNow.AddDays(-15) },
             new Order { Id = 2, CustomerName = "Bob Smith",      CustomerEmail = "bob@example.com",    ProductId = 2, Quantity = 2, TotalPrice = 399.98m,  Status = OrderStatus.Shipped,   CreatedAt = DateTime.UtcNow.AddDays(-7)  },
             new Order { Id = 3, CustomerName = "Carol White",    CustomerEmail = "carol@example.com",  ProductId = 5, Quantity = 1, TotalPrice = 89.99m,   Status = OrderStatus.Confirmed, CreatedAt = DateTime.UtcNow.AddDays(-3)  },
             new Order { Id = 4, CustomerName = "David Brown",    CustomerEmail = "david@example.com",  ProductId = 8, Quantity = 3, TotalPrice = 59.97m,   Status = OrderStatus.Pending,   CreatedAt = DateTime.UtcNow.AddDays(-1)  },
-            new Order { Id = 5, CustomerName = "Eva Martinez",   CustomerEmail = "eva@example.com",    ProductId = 3, Quantity = 1, TotalPrice = 349.50m,  Status = OrderStatus.Cancelled, CreatedAt = DateTime.UtcNow.AddDays(-20) }
+            new Order { Id = 5, CustomerName = "Eva Martinez",   CustomerEmail = "eva@example.com",    ProductId = 3, Quantity = 1, TotalPrice = 349.50m,  Status = OrderStatus.Cancelled, CreatedAt = DateTime.UtcNow.AddDays(-20) },
+            new Order { Id = 6, CustomerName = "Frank Deleted",  CustomerEmail = "frank@example.com",  ProductId = 4, Quantity = 1, TotalPrice = 49.99m,   Status = OrderStatus.Confirmed, CreatedAt = DateTime.UtcNow.AddDays(-5), IsDeleted = true }
         );
 
         db.SaveChanges();

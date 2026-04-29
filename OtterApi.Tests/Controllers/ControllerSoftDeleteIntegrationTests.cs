@@ -283,7 +283,7 @@ public class ControllerSoftDeleteIntegrationTests : IDisposable
     [Fact]
     public async Task DeleteAsync_SoftDelete_BeforeSaveHook_ReceivesEntityWithFlagAlreadySet()
     {
-        // SoftDeleteSetter runs before PreSaveHandlers, so the hook should see IsDeleted=true.
+        // DeleteApply runs before PreSaveHandlers, so the hook should see IsDeleted=true.
         bool? isDeletedInHook = null;
 
         var options = new OtterApiOptions { Path = "/api" };
@@ -299,6 +299,34 @@ public class ControllerSoftDeleteIntegrationTests : IDisposable
         await BuildController(entity).DeleteAsync(ByIdRoute(entity, "1"));
 
         Assert.True(isDeletedInHook);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PUT / PATCH — soft-deleted records are hidden (auto query filter applies)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public async Task PutAsync_Returns404_ForSoftDeletedRecord()
+    {
+        var entity  = BuildSoftDeleteEntity();
+        var ctrl    = BuildController(entity);
+        var updated = new TestSoftDeleteItem { Id = 3, Name = "GammaUpdated", IsDeleted = true };
+
+        var result = await ctrl.PutAsync(ByIdRoute(entity, "3"), updated);
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task PatchAsync_Returns404_ForSoftDeletedRecord()
+    {
+        var entity = BuildSoftDeleteEntity();
+        var ctrl   = BuildController(entity);
+        var patch  = System.Text.Json.Nodes.JsonNode.Parse("{\"name\":\"GammaPatched\"}")!.AsObject();
+
+        var result = await ctrl.PatchAsync(ByIdRoute(entity, "3"), patch);
+
+        Assert.IsType<NotFoundObjectResult>(result);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -346,7 +374,7 @@ public class ControllerSoftDeleteIntegrationTests : IDisposable
     }
 
     [Fact]
-    public void WithSoftDelete_AutoRegistersQueryFilter_AndSetter()
+    public void WithSoftDelete_AutoRegistersQueryFilter_AndSetsIsSoftDeleteFlag()
     {
         var options = new OtterApiOptions { Path = "/api" };
         var entity  = options.Entity<TestSoftDeleteItem>("/items")
@@ -354,7 +382,17 @@ public class ControllerSoftDeleteIntegrationTests : IDisposable
             .Build(typeof(TestDbContext), options);
 
         Assert.Single(entity.QueryFilters);
-        Assert.NotNull(entity.SoftDeleteSetter);
+        Assert.True(entity.IsSoftDelete);
+    }
+
+    [Fact]
+    public void WithoutSoftDelete_IsSoftDeleteFlag_IsFalse()
+    {
+        var options = new OtterApiOptions { Path = "/api" };
+        var entity  = options.Entity<TestSoftDeleteItem>("/items")
+            .Build(typeof(TestDbContext), options);
+
+        Assert.False(entity.IsSoftDelete);
     }
 
     [Fact]

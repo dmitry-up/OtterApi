@@ -272,6 +272,79 @@ public class EntityBuilderTests
 
         Assert.Equal(typeof(TestDbContext), entity.DbContextType);
     }
+
+    // ── DeleteApply / IsSoftDelete ────────────────────────────────────────────
+
+    [Fact]
+    public void Build_DeleteApply_IsNotNull_ByDefault()
+    {
+        var options = OptionsWithPath("/api");
+        var entity  = options.Entity<TestProduct>("/products").Build(typeof(TestDbContext), options);
+
+        Assert.NotNull(entity.DeleteApply);
+    }
+
+    [Fact]
+    public void Build_IsSoftDelete_IsFalse_ByDefault()
+    {
+        var options = OptionsWithPath("/api");
+        var entity  = options.Entity<TestProduct>("/products").Build(typeof(TestDbContext), options);
+
+        Assert.False(entity.IsSoftDelete);
+    }
+
+    [Fact]
+    public void Build_WithSoftDelete_SetsIsSoftDeleteTrue()
+    {
+        var options = OptionsWithPath("/api");
+        var entity  = options.Entity<TestSoftDeleteItem>("/items")
+            .WithSoftDelete(x => x.IsDeleted)
+            .Build(typeof(TestDbContext), options);
+
+        Assert.True(entity.IsSoftDelete);
+        Assert.NotNull(entity.DeleteApply);
+    }
+
+    [Fact]
+    public async Task Build_DeleteApply_HardDelete_RemovesEntityFromContext()
+    {
+        var options = OptionsWithPath("/api");
+        var entity  = options.Entity<TestSoftDeleteItem>("/items")
+            .Build(typeof(TestDbContext), options);
+
+        using var db = DbContextFactory.CreateInMemory();
+        var item = new TestSoftDeleteItem { Id = 1, Name = "X", IsDeleted = false };
+        db.SoftDeleteItems.Add(item);
+        db.SaveChanges();
+
+        entity.DeleteApply(db, item);
+        await db.SaveChangesAsync();
+
+        Assert.Null(await db.SoftDeleteItems.FindAsync(1));
+    }
+
+    [Fact]
+    public async Task Build_DeleteApply_SoftDelete_SetsFlag_DoesNotRemove()
+    {
+        var options = OptionsWithPath("/api");
+        var entity  = options.Entity<TestSoftDeleteItem>("/items")
+            .WithSoftDelete(x => x.IsDeleted)
+            .Build(typeof(TestDbContext), options);
+
+        using var db = DbContextFactory.CreateInMemory();
+        var item = new TestSoftDeleteItem { Id = 1, Name = "X", IsDeleted = false };
+        db.SoftDeleteItems.Add(item);
+        db.SaveChanges();
+        db.ChangeTracker.Clear();
+
+        var tracked = await db.SoftDeleteItems.FindAsync(1);
+        entity.DeleteApply(db, tracked!);
+        await db.SaveChangesAsync();
+
+        var result = await db.SoftDeleteItems.FindAsync(1);
+        Assert.NotNull(result);
+        Assert.True(result.IsDeleted);
+    }
 }
 
 

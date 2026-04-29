@@ -65,12 +65,8 @@ public class OtterApiEntity
     /// <summary>Handlers invoked after SaveChangesAsync. Multiple handlers run in registration order.</summary>
     public List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> PostSaveHandlers { get; init; } = [];
 
-    /// <summary>
-    /// When non-null, soft-delete is enabled: DeleteAsync sets this flag to <c>true</c>
-    /// instead of calling <c>dbContext.Remove(entity)</c>.
-    /// Registered via <c>.WithSoftDelete(p => p.IsDeleted)</c>.
-    /// </summary>
-    public Action<object, bool>? SoftDeleteSetter { get; init; }
+    /// <summary><c>true</c> when soft-delete is enabled via <c>.WithSoftDelete(...)</c>.</summary>
+    public bool IsSoftDelete { get; init; }
 
     // ── Typed delegates — compiled once at startup, replace dynamic dispatch on every request ──
 
@@ -121,4 +117,11 @@ public class OtterApiEntity
     /// Compiled at startup from T — no reflection or string parsing per request.
     /// </summary>
     public Func<IQueryable, IQueryable> OrderByIdDesc { get; init; } = null!;
+
+    /// <summary>
+    /// Executes the delete action for this entity.
+    /// Default: <c>dbContext.Remove(entity)</c> (hard delete).
+    /// Replaced with a compiled property-setter when <c>.WithSoftDelete(...)</c> is configured.
+    /// </summary>
+    public Action<DbContext, object> DeleteApply { get; init; } = (ctx, e) => ctx.Remove(e);
 }

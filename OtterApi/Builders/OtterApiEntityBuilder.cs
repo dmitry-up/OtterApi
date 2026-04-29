@@ -28,7 +28,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private readonly List<OtterApiCustomRoute> customRoutes = [];
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> preSaveHandlers = [];
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> postSaveHandlers = [];
-    private Action<object, bool>? softDeleteSetter;
+    private Action<DbContext, object>? softDeleteApply;
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -175,7 +175,12 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
         var notExpr = Expression.Lambda<Func<T, bool>>(Expression.Not(isDeletedFlag.Body), param);
         queryFilters.Add(q => ((IQueryable<T>)q).Where(notExpr));
 
-        softDeleteSetter = (obj, val) => prop.SetValue(obj, val);
+        // Compile a typed setter once: (object obj) => ((T)obj).IsDeleted = true
+        var objParam   = Expression.Parameter(typeof(object), "obj");
+        var castEntity = Expression.Convert(objParam, typeof(T));
+        var assign     = Expression.Assign(Expression.Property(castEntity, prop), Expression.Constant(true));
+        var compiled   = Expression.Lambda<Action<object>>(assign, objParam).Compile();
+        softDeleteApply = (_, e) => compiled(e);
         return this;
     }
 
@@ -315,7 +320,8 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             Id = idPropInfo,
             PreSaveHandlers  = preSaveHandlers,
             PostSaveHandlers = postSaveHandlers,
-            SoftDeleteSetter = softDeleteSetter,
+            IsSoftDelete     = softDeleteApply != null,
+            DeleteApply      = softDeleteApply ?? ((ctx, e) => ctx.Remove(e)),
 
             // ── Typed delegates compiled once from T ────────────────────────────
             FindByIdAsync = async (ctx, id, ct) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }, ct),
