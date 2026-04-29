@@ -46,6 +46,8 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
     // Soft-delete: DELETE sets IsDeleted=true instead of removing the row.
     // The auto-registered query filter (IsDeleted==false) hides soft-deleted orders
     // from all GET endpoints automatically — no extra WithQueryFilter needed.
+    // OnDuplicate: idempotent POST — if the same customer already has a Confirmed/Shipped
+    //   order for the same product, return it instead of inserting a duplicate.
     // Custom routes:
     //   GET /api/orders/latest — the most recently confirmed/shipped/delivered order
     options.Entity<Order>("orders")
@@ -53,6 +55,19 @@ builder.Services.AddOtterApi<DemoDbContext>(options =>
         .ExposePagedResult()
         .WithSoftDelete(o => o.IsDeleted)
         .WithQueryFilter(o => o.Status != OrderStatus.Cancelled && o.Status != OrderStatus.Pending)
+        .OnDuplicate(async (ctx, newOrder) =>
+        {
+            // Find the most recent active order from the same customer for the same product.
+            // If one exists, return it — the POST becomes a no-op (idempotent).
+            return await ctx.Set<Order>()
+                .Where(o => o.CustomerEmail == newOrder.CustomerEmail
+                         && o.ProductId     == newOrder.ProductId
+                         && !o.IsDeleted
+                         && o.Status != OrderStatus.Cancelled
+                         && o.Status != OrderStatus.Pending)
+                .OrderByDescending(o => o.CreatedAt)
+                .FirstOrDefaultAsync();
+        })
         // Scoped filter: каждый пользователь видит только свои заказы (по email из токена)
         // .WithScopedQueryFilter(sp =>
         // {

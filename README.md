@@ -43,6 +43,7 @@
   - [Handler Approach (Interface)](#handler-approach-interface)
   - [Chaining Multiple Hooks](#chaining-multiple-hooks)
 - [Soft Delete](#soft-delete)
+- [OnDuplicate — Idempotent POST (Find-or-Create)](#onduplicate--idempotent-post-find-or-create)
 - [Error Handling — OtterApiException](#error-handling--otterApiexception)
 - [Keyless Entities](#keyless-entities)
 - [Swagger](#swagger)
@@ -1172,6 +1173,66 @@ options.Entity<Order>("orders")
 - The expression must be a simple property selector, e.g. `o => o.IsDeleted`. Computed expressions such as `o => !o.IsDeleted` or `o => true` throw `ArgumentException` at startup.
 - Only `bool` properties are supported.
 - `PUT` / `PATCH` on a soft-deleted record return **404** (the auto query filter is applied to those operations too).
+
+---
+
+## OnDuplicate — Idempotent POST (Find-or-Create)
+
+`.OnDuplicate(finder)` registers a hook that runs at the start of every `POST` request **before** any BeforeSave hooks or database writes. If the delegate returns a non-null entity, that existing entity is returned as `200 OK` and the new row is **never inserted**. When the delegate returns `null`, the normal create flow proceeds and `201 Created` is returned.
+
+### Basic usage
+
+```csharp
+options.Entity<Order>("orders")
+    .OnDuplicate(async (ctx, newOrder) =>
+        await ctx.Set<Order>()
+            .FirstOrDefaultAsync(o => o.CustomerEmail == newOrder.CustomerEmail
+                                   && o.ProductId     == newOrder.ProductId));
+```
+
+### Complex logic
+
+Because the delegate receives the full `DbContext` and the incoming entity, you can run any async queries, comparisons, or business logic inside it:
+
+```csharp
+options.Entity<Order>("orders")
+    .OnDuplicate(async (ctx, newOrder) =>
+    {
+        // Find the most recent active order from the same customer for the same product.
+        var last = await ctx.Set<Order>()
+            .Where(o => o.CustomerEmail == newOrder.CustomerEmail
+                     && o.ProductId     == newOrder.ProductId
+                     && o.Status        != OrderStatus.Cancelled)
+            .OrderByDescending(o => o.CreatedAt)
+            .FirstOrDefaultAsync();
+
+        if (last == null) return null; // no existing order — create new
+
+        // Treat as duplicate only if placed within the last 24 hours
+        return (DateTime.UtcNow - last.CreatedAt).TotalHours < 24 ? last : null;
+    });
+```
+
+A synchronous overload is also available when no async operations are needed:
+
+```csharp
+options.Entity<Product>("products")
+    .OnDuplicate((ctx, p) => ctx.Set<Product>().FirstOrDefault(x => x.Sku == p.Sku));
+```
+
+### Behaviour summary
+
+| Condition | Status | Body | DB write | Hooks |
+|---|---|---|---|---|
+| Finder returns existing entity | `200 OK` | existing entity | none | none |
+| Finder returns `null` | `201 Created` | new entity | insert | BeforeSave / AfterSave fire |
+| No `.OnDuplicate` configured | `201 Created` | new entity | insert | BeforeSave / AfterSave fire |
+
+### Notes
+
+- BeforeSave and AfterSave hooks are **skipped** when a duplicate is found — there is nothing to save.
+- The finder receives the incoming (validated, not yet tracked) entity, so you can read its fields freely.
+- `.OnDuplicate` can be combined with `.WithSoftDelete`, `.WithQueryFilter`, and `.BeforeSave` on the same entity.
 
 ---
 

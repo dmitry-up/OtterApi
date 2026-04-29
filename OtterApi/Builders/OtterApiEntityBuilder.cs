@@ -29,6 +29,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> preSaveHandlers = [];
     private readonly List<Func<DbContext, object, object?, OtterApiCrudOperation, Task>> postSaveHandlers = [];
     private Action<DbContext, object>? softDeleteApply;
+    private Func<DbContext, object, Task<object?>>? duplicateFinder;
 
     internal OtterApiEntityBuilder(string route)
     {
@@ -157,6 +158,26 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
 
     public OtterApiEntityBuilder<T> AfterSave(IOtterApiAfterSaveHandler<T> handler)
         => AfterSave(handler.AfterSaveAsync);
+
+    /// <summary>
+    /// Registers a find-or-create hook called at the start of every <c>POST</c> request.
+    /// The delegate receives the <see cref="DbContext"/> and the incoming entity, and should
+    /// return an existing entity if a duplicate is detected — or <c>null</c> to proceed normally.
+    /// When a non-null value is returned, that entity is sent back as <c>200 OK</c> and nothing
+    /// is written to the database (PreSave / AfterSave hooks are skipped).
+    /// </summary>
+    public OtterApiEntityBuilder<T> OnDuplicate(Func<DbContext, T, Task<T?>> finder)
+    {
+        duplicateFinder = async (ctx, e) => await finder(ctx, (T)e);
+        return this;
+    }
+
+    /// <inheritdoc cref="OnDuplicate(Func{DbContext,T,Task{T?}})"/>
+    public OtterApiEntityBuilder<T> OnDuplicate(Func<DbContext, T, T?> finder)
+    {
+        duplicateFinder = (ctx, e) => Task.FromResult<object?>(finder(ctx, (T)e));
+        return this;
+    }
 
     /// <summary>
     /// Enables soft-delete for this entity: <c>DeleteAsync</c> sets the specified boolean
@@ -322,6 +343,7 @@ public class OtterApiEntityBuilder<T> : IOtterApiEntityBuilder where T : class
             PostSaveHandlers = postSaveHandlers,
             IsSoftDelete     = softDeleteApply != null,
             DeleteApply      = softDeleteApply ?? ((ctx, e) => ctx.Remove(e)),
+            DuplicateFinder  = duplicateFinder,
 
             // ── Typed delegates compiled once from T ────────────────────────────
             FindByIdAsync = async (ctx, id, ct) => (object?)await ctx.Set<T>().FindAsync(new object?[] { id }, ct),

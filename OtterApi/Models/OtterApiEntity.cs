@@ -124,4 +124,12 @@ public class OtterApiEntity
     /// Replaced with a compiled property-setter when <c>.WithSoftDelete(...)</c> is configured.
     /// </summary>
     public Action<DbContext, object> DeleteApply { get; init; } = (ctx, e) => ctx.Remove(e);
+
+    /// <summary>
+    /// When set, called in <c>PostAsync</c> before inserting a new row.
+    /// If the delegate returns a non-null entity, that existing entity is returned as <c>200 OK</c>
+    /// and no new row is inserted (find-or-create / idempotent POST semantics).
+    /// Registered via <c>.OnDuplicate(...)</c>.
+    /// </summary>
+    public Func<DbContext, object, Task<object?>>? DuplicateFinder { get; init; }
 }

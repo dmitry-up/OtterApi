@@ -114,6 +114,15 @@ public class OtterApiRestController(
         if (!IsValid(entity))
             return new BadRequestObjectResult(actionContext.ModelState);
 
+        // Find-or-create: if a DuplicateFinder is configured and returns an existing entity,
+        // return it as 200 OK — nothing is written to the database and hooks are skipped.
+        if (otterApiRouteInfo.Entity.DuplicateFinder != null)
+        {
+            var existing = await otterApiRouteInfo.Entity.DuplicateFinder(dbContext, entity);
+            if (existing != null)
+                return GetOkObjectResult(existing);
+        }
+
         // Run BeforeSave hooks while the entity is still detached — hooks see a clean ChangeTracker.
         // Add() is called only after all pre-save handlers succeed, so a hook that throws
         // (e.g. DUPLICATE_NAME check) never leaves a ghost entry in the tracker.
